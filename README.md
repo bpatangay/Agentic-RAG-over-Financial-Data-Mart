@@ -42,6 +42,14 @@ Assumptions and limitations:
 
 ## Prepare and load data manually
 
+Create a local virtual environment and install the project:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install -e .
+```
+
 Download the Kaggle CSV yourself and keep it outside the repository.
 
 ```bash
@@ -127,6 +135,20 @@ print(r["columns"])
 print(r["rows"][:10])
 PY
 ```
+
+## Repository structure
+
+The committed source is intentionally limited to the project code and report:
+
+- `lending_club/` - data preparation, SQLite star schema, models, RAG API, and CLI
+- `tests/test_lending_club.py` - offline integration and query tests
+- `docs/report.tex`, `docs/report.md`, and `docs/report.pdf` - project report
+- `docs/proposal_compliance.md` - proposal compliance review
+- `docs/` also contains useful generated tables and figures
+- `pyproject.toml` - package metadata and test configuration
+
+Kaggle CSVs, `data/`, `artifacts/`, SQLite databases, virtual environments,
+caches, and model binaries are local-only and excluded through `.gitignore`.
 
 ## Proposal deviations
 

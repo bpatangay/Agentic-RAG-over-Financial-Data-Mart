@@ -140,26 +140,27 @@ The benchmark, model deployment, and metrics are **planned, not measured**.
 ## IX. Implementation and API/UI
 Technology: FastAPI, PostgreSQL, Python, pandas, psycopg2 or SQLAlchemy, scikit-learn, and optional NRP GPU model execution. The project should remain usable if an external model endpoint is unavailable.
 
-Planned layout:
+Implemented layout:
 ```text
 docs/report.tex
-src/etl/
-src/models/
-src/rag/
-src/api/
-sql/
-tests/
-data/             # External or Git-ignored
+docs/report.md
+docs/report.pdf
+lending_club/
+tests/test_lending_club.py
+pyproject.toml
+data/             # Local-only and Git-ignored
+artifacts/        # Local-only and Git-ignored
 ```
 
-Proposed setup:
+Setup and run:
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install pandas psycopg2-binary scikit-learn fastapi uvicorn
-createdb lending_club_mart
-python src/etl/load_lending_club.py --csv /external/path.csv --dbname lending_club_mart
-uvicorn src.api.main:app --reload
+python -m pip install -e .
+python -m lending_club.cli prepare /external/path.csv data/loans.csv
+python -m lending_club.cli load data/loans.csv data/lending_club.db
+python -m lending_club.cli train data/loans.csv artifacts/
+uvicorn lending_club.api:app --reload
 ```
 
 Example prompts:

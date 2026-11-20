@@ -1,10 +1,52 @@
-.pytest_cache/
+# OS files
+.DS_Store
+Thumbs.db
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE and editor files
+.idea/
+.vscode/
+*.iml
+.fleet/
+
+# Python caches and build output
 __pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
 *.py[cod]
+*$py.class
 *.egg-info/
+build/
+dist/
+
+# Local data, databases, models, and generated artifacts
 data/
 artifacts/
 *.db
 *.sqlite
 *.sqlite3
 *.joblib
+
+# TeX auxiliary files
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.lof
+*.log
+*.lot
+*.nav
+*.out
+*.run.xml
+*.snm
+*.synctex.gz
+*.toc
