@@ -7,7 +7,7 @@ from lending_club.api import app
 import lending_club.api as api_module
 from lending_club.data import prepare_lending_data
 from lending_club.etl import load_lending_data
-from lending_club.models import train_models
+from lending_club.models import _select_decision_threshold, train_models
 from lending_club.rag import SUPPORTED, generate_sql, answer_question
 from lending_club.cli import main
 
@@ -88,6 +88,39 @@ def test_models_train_on_small_fixture(tmp_path):
     assert "classification_accuracy" in metrics
     assert (tmp_path / "artifacts" / "loan_default_classifier.joblib").exists()
     assert "recovery_linear_regression" in metrics
+
+
+def test_models_use_latest_year_holdout_and_report_baselines(tmp_path):
+    frame = prepared_fixture(tmp_path, rows=120)
+    metrics = train_models(frame, tmp_path / "artifacts")
+
+    assert metrics["evaluation"]["strategy"] == "latest_issue_year_holdout"
+    assert metrics["evaluation"]["training_years"] == [2015, 2016, 2017]
+    assert metrics["evaluation"]["test_year"] == 2018
+    assert metrics["classification"]["model"] == "DecisionTreeClassifier"
+    assert metrics["classification"]["test"]["confusion_matrix_labels_0_1"]
+    assert metrics["classification"]["test"]["pr_auc"] is not None
+    assert metrics["classification"]["threshold_selection"] in {
+        "training_oof_max_recall_at_77pct_accuracy",
+        "training_oof_max_f1_accuracy_floor_unmet",
+    }
+    assert metrics["classification"]["threshold_validation"] is not None
+    assert 0 <= metrics["classification"]["decision_threshold"] <= 1
+    assert metrics["classification"]["baseline"]["model"].startswith("DummyClassifier")
+    assert metrics["recovery_linear_regression"]["baseline"]["mae"] >= 0
+
+
+def test_threshold_selection_preserves_accuracy_floor_and_maximizes_recall():
+    actual = pd.Series([0] * 8 + [1] * 2)
+    probabilities = pd.Series([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.95]).to_numpy()
+
+    threshold, selection, validation = _select_decision_threshold(actual, probabilities)
+
+    assert threshold == 0.9
+    assert selection == "training_oof_max_recall_at_77pct_accuracy"
+    assert validation["accuracy_floor_met"] is True
+    assert validation["accuracy"] >= 0.77
+    assert validation["recall"] == 1.0
 
 
 def test_api_health_and_query(tmp_path, monkeypatch):

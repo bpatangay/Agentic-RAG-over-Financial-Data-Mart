@@ -2,16 +2,18 @@
 
 **Agentic Retrieval-Augmented Generation (RAG) over a Financial Data Mart**
 
-> This Markdown version is provided because a TeX engine was unavailable in the workspace. It mirrors the IEEE-style LaTeX report in `docs/report.tex`.
+> This Markdown version is a readable companion to the IEEE-style LaTeX report in `docs/report.tex`.
 
 ## Title and Author
-- Author: **Bhavani Patangay** `[PLACEHOLDER: confirm course section and submission metadata]`
-- Institution: Kennesaw State University
+- Author: **Bhavani Patangay**
+- Institution: Department of Computer Science, Kennesaw State University
 - Course: CS 7050 — Data Warehousing and Data Mining
 - Section: 01
+- Location: Marietta, U.S.A.
+- Email: bpatanga@students.kennesaw.edu
 
 ## Abstract
-This project proposes an end-to-end platform combining a PostgreSQL financial data mart, traditional machine-learning models, and agentic RAG for Lending Club loan-performance analysis. The proposed model uses a fact table linked to borrower, loan, grade, and date dimensions. Decision trees provide auditable default-risk rules; linear regression estimates recovery or loss-related quantities. FastAPI exposes a natural-language SQL interface. The implementation and measured results are not present in the inspected worktree, so this report clearly distinguishes proposed design from verified evidence.
+This project proposes an end-to-end platform combining a PostgreSQL financial data mart, traditional machine-learning models, and agentic RAG for Lending Club loan-performance analysis. The proposed model uses a fact table linked to borrower, loan, grade, and date dimensions. A temporal evaluation reports decision-tree classification and linear-regression results: the classifier achieves 0.8003 accuracy and 0.2002 recall on the 2018 holdout, while regression results are mixed against a mean baseline. A FastAPI/RAG service remains proposed; its implementation and benchmark are not verified here. This report distinguishes supplied model metrics from unverified end-to-end implementation and dataset artifacts.
 
 **Keywords:** Data warehousing, star schema, Lending Club, decision trees, linear regression, PostgreSQL, FastAPI, retrieval-augmented generation, text-to-SQL
 
@@ -24,7 +26,7 @@ Stakeholders require visibility into loan risk, charge-offs, and exposure, but b
 The research question is whether a PostgreSQL star schema, conventional machine-learning models, and schema-grounded RAG can be integrated to answer Lending Club portfolio questions accurately and transparently. The scope is decision support, not real-world credit approval.
 
 ## III. Dataset and Selection
-The proposed dataset is the Kaggle “All Lending Club Loan Data” release. The proposal selects approximately 100,000 records issued from 2015 through 2018. These records and the row count are **not verified** in this worktree.
+The proposed dataset is the Kaggle “All Lending Club Loan Data” release. The proposal selects approximately 100,000 records issued from 2015 through 2018. The exact source release and CSV remain unverified in this checkout; the model-evaluation split is reported in Section VII.
 
 | Area | Attributes | Use |
 |---|---|---|
@@ -107,7 +109,7 @@ sequenceDiagram
 
 ## VII. Machine Learning Models and Metrics
 ### Decision-Tree Default Classification
-A decision tree predicts whether a held-out loan is fully paid or charged off. Explicit targets and leakage controls are required.
+A decision tree was evaluated for distinguishing fully paid from charged-off loans. The temporal split trains on 93,642 loans from 2015–2017 and evaluates on an untouched 2018 holdout of 6,358 loans. The classification threshold, 0.397727, was selected by maximizing out-of-fold (OOF) recall subject to a 77% OOF-accuracy floor. At that threshold, training OOF accuracy is 0.7714, recall is 0.2303, and F1 is 0.3075.
 
 - Precision = TP / (TP + FP)
 - Recall = TP / (TP + FN)
@@ -115,15 +117,32 @@ A decision tree predicts whether a held-out loan is fully paid or charged off. E
 - Accuracy = (TP + TN) / (TP + TN + FP + FN)
 - ROC-AUC = area under the true-positive-rate versus false-positive-rate curve
 
-**Measured values:** `[PLACEHOLDER: not available]`
+The confusion matrix below lists rows as actual negative/positive and columns as predicted negative/positive.
+
+| 2018 holdout measure | Selected threshold 0.397727 | Majority baseline | Earlier max-F1 threshold 0.229 |
+|---|---:|---:|---:|
+| Accuracy | 0.8003 | 0.8413 | 0.6291 |
+| Precision | 0.3038 | — | — |
+| Recall | 0.2002 | 0 | 0.6571 |
+| F1 | 0.2413 | 0 | 0.3599 |
+| ROC-AUC | 0.6869 | 0.5000 | — |
+| AP (PR-AUC) | 0.2671 | 0.1587 | — |
+| Confusion matrix | [[4886, 463], [807, 202]] | — | — |
+
+The selected threshold trades some accuracy for positive-class detection relative to the majority baseline, but recall remains modest. The earlier max-F1 threshold has higher recall and F1 but substantially lower accuracy; these operating points show the accuracy–recall tradeoff, not overall superiority. The proposal's numeric threshold-compliance criterion has not been verified and is not claimed.
 
 ### Linear Recovery Regression
-Linear regression estimates a defined recovery or loss outcome on defaulted records.
+Linear regression was evaluated for a recovery-related outcome against a mean-prediction baseline.
 
-- MSE = (1/n) Σ(y_i - ŷ_i)²
 - R² = 1 - Σ(y_i - ŷ_i)² / Σ(y_i - ȳ)²
 
-**Measured values:** `[PLACEHOLDER: not available]`
+| Measure | Linear regression | Mean baseline |
+|---|---:|---:|
+| MAE | 3011.69 | 3156.40 |
+| RMSE | 3796.35 | 3464.18 |
+| R² | -3.311 | -2.589 |
+
+The model has lower MAE but higher RMSE and a more negative R² than the baseline, indicating a weak, mixed fit rather than overall improvement.
 
 ## VIII. RAG/Text-to-SQL Methodology
 The knowledge base contains DDL, relationships, data types, approved SQL examples, and metric definitions. Retrieval selects relevant context, then the model generates one read-only statement. A 40-query benchmark is proposed for syntax success, schema entity match, result-set match, and end-to-end latency.
@@ -172,20 +191,21 @@ What principal was recovered by grade and issue year?
 ```
 
 ## X. Experimental Setup and Results
-The proposed setup partitions loans into training and held-out test cohorts, records random seeds and package versions, and reports hardware/model configuration. Because no CSV, database, test log, model artifact, or implementation exists in the worktree, there are no measured results.
+The reported temporal evaluation trains on 93,642 loans from 2015–2017 and evaluates on an untouched 2018 holdout of 6,358 loans. The model metrics are reported above. The underlying Kaggle CSV, model artifact, execution log, and full implementation are not present in this worktree, so the results cannot be independently reproduced from this checkout. The RAG benchmark and full API/data-mart implementation remain unverified.
 
 | Item | Verified status |
 |---|---|
 Dataset source | Proposed in the proposal |
-CSV subset and row count | `[PLACEHOLDER: not verified]` |
+Temporal model split | 93,642 training; 6,358 holdout (2018) |
+Decision-tree metrics | Reported in this report |
+Recovery-regression metrics | Reported in this report |
+Raw dataset and model artifacts | `[PLACEHOLDER: not present for independent reproduction]` |
 PostgreSQL schema | `[PLACEHOLDER: not implemented]` |
-Decision-tree metrics | `[PLACEHOLDER: not measured]` |
-Regression metrics | `[PLACEHOLDER: not measured]` |
 40-query benchmark | `[PLACEHOLDER: not implemented]` |
 FastAPI deployment | `[PLACEHOLDER: not implemented]` |
 
 ## XI. Evaluation
-Evaluation combines warehouse correctness, model validity, and RAG usefulness:
+Evaluation combines warehouse correctness, model validity, and RAG usefulness. The reported temporal model results show a classifier threshold tradeoff and mixed recovery-regression performance against a mean baseline; underlying files are needed for independent reproduction.
 
 - Reconcile load counts, principal totals, and foreign keys.
 - Compare held-out model metrics against simple baselines.
@@ -199,7 +219,7 @@ The Kaggle source may contain incomplete or inconsistent historical labels. The 
 LLMs may hallucinate fields or produce incorrect SQL. Mitigations include read-only execution, statement allowlisting, parsing, row limits, timeout, and human review. Future work includes incremental ETL, slowly changing dimensions, test suites, dashboards, retrieval evaluation, audit logs, model monitoring, fairness analysis, and confidence reporting.
 
 ## XIII. Conclusion
-The proposal defines a coherent financial data-mart and agentic RAG project. The proposed star schema supports OLAP-style analysis, decision trees provide auditable default-risk rules, linear regression provides a recovery baseline, and FastAPI provides a deployable interface. The inspected worktree contains no implementation or measured evaluation. This report provides the design and methodology while deliberately excluding fabricated results.
+The proposal defines a coherent financial data-mart and agentic RAG project, with a star schema for OLAP-style analysis and a proposed FastAPI interface. The supplied temporal evaluation reports measurable but qualified model results: the selected decision threshold favors an accuracy constraint over higher recall, while recovery regression improves MAE but not RMSE or R² versus the mean baseline. The full data mart, API, RAG benchmark, and raw artifacts remain unverified in the inspected checkout; the model metrics therefore require their source artifacts for independent reproduction.
 
 ## References
 1. N. George, “All Lending Club Loan Data,” Kaggle, 2019. https://www.kaggle.com/datasets/wordsforthewise/lending-club

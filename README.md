@@ -70,6 +70,18 @@ Preparation keeps 2015–2018 records, settled statuses, and exactly up to
 100,000 deterministically sampled records with seed 42. It normalizes percent
 and term fields and rejects rows missing required values.
 
+Training holds out the latest issue year when multiple years are present.
+Decision-tree hyperparameters are selected by cross-validated PR-AUC on
+earlier years only. The decision threshold maximizes out-of-fold recall while
+maintaining a 77% validation-accuracy floor (with F1 as a tie-breaker); if the
+floor is infeasible, the fallback maximizes F1. The final holdout is not used
+for tuning. The saved
+`artifacts/metrics.json` includes accuracy, precision, recall, F1, ROC-AUC,
+average precision (PR-AUC), a confusion matrix, and a majority-class baseline.
+The charged-off principal recovery `LinearRegression` is evaluated against a
+training-mean baseline using MAE, RMSE, and R-squared. Small fixtures that
+cannot support tuning use the proposal's default depth-6 tree.
+
 ## Schema
 
 ```mermaid

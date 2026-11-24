@@ -19,13 +19,15 @@
 
 \begin{document}
 \title{Agentic Retrieval-Augmented Generation over a Financial Data Mart}
-\author{\IEEEauthorblockN{\placeholder{Bhavani Patangay}}
-\IEEEauthorblockA{\placeholder{Kennesaw State University}\\
-\placeholder{Section 01 --- instructor and submission metadata}}}
+\author{\IEEEauthorblockN{Bhavani Patangay}
+\IEEEauthorblockA{Department of Computer Science\\
+Kennesaw State University\\
+Marietta, U.S.A.\\
+bpatanga@students.kennesaw.edu}}
 \maketitle
 
 \begin{abstract}
-This project proposes an end-to-end analytical platform combining a PostgreSQL financial data mart, traditional machine-learning models, and an agentic retrieval-augmented generation (RAG) interface for Lending Club loan-performance analysis. The proposed dimensional model uses a central loan-performance fact table linked to borrower, loan, grade, and date dimensions. Decision trees provide auditable default-risk rules, while linear regression estimates recovery or loss-related quantities for defaulted loans. A FastAPI service exposes natural-language querying; a large language model receives the warehouse schema and approved query patterns as retrieved context, produces SQL, executes it safely, and summarizes the result. The repository is currently at the proposal/report stage and does not contain verified implementation artifacts or measured results. Consequently, this report separates the proposed design from verified status and marks every numerical result as planned or placeholder until reproducible files and logs are added.
+This project proposes an end-to-end analytical platform combining a PostgreSQL financial data mart, traditional machine-learning models, and an agentic retrieval-augmented generation (RAG) interface for Lending Club loan-performance analysis. The proposed dimensional model uses a central loan-performance fact table linked to borrower, loan, grade, and date dimensions. A temporal evaluation reports decision-tree classification and linear-regression results: the classifier achieves 0.8003 accuracy and 0.2002 recall on the 2018 holdout, while regression results are mixed against a mean baseline. A FastAPI/RAG service remains proposed; its implementation and benchmark are not verified here. This report distinguishes supplied model metrics from unverified end-to-end implementation and dataset artifacts.
 \end{abstract}
 
 \begin{IEEEkeywords}
@@ -44,7 +46,7 @@ The project therefore asks: \emph{Can a PostgreSQL star schema, conventional mac
 
 \section{Dataset and Selection}
 \subsection{Data Source}
-The proposed source is the public ``All Lending Club Loan Data'' dataset on Kaggle \cite{lendingclub}. The proposal specifies a subset of approximately 100,000 loan records originating between 2015 and 2018. This report does not claim that these rows have been staged or that the subset has been verified.
+The proposed source is the public ``All Lending Club Loan Data'' dataset on Kaggle \cite{lendingclub}. The proposal specifies a subset of approximately 100,000 loan records originating between 2015 and 2018. The exact source release and CSV remain unverified in this checkout; the model-evaluation split is reported in Section~VII.
 
 \subsection{Candidate Attributes}
 Table~\ref{tab:data_attributes} summarizes candidate fields. Final data types and availability must be confirmed against the exact Kaggle release used.
@@ -90,6 +92,7 @@ The proposed mart centers on \texttt{Fact\_Loan\_Performance}. Dimension keys su
 
 \begin{figure}[!t]
 \centering
+\resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[node distance=6mm, every node/.style={font=\scriptsize},
   fact/.style={rectangle,draw,rounded corners,fill=orange!12,text width=27mm,minimum height=12mm,align=center},
   dim/.style={rectangle,draw,fill=blue!8,text width=23mm,minimum height=10mm,align=center},
@@ -101,7 +104,7 @@ The proposed mart centers on \texttt{Fact\_Loan\_Performance}. Dimension keys su
 \node[dim,below=8mm of fact] (loan) {\textbf{Dim\_Loan}\\term, amount, rate};
 \draw[arrow] (borrower)--(fact); \draw[arrow] (date)--(fact);
 \draw[arrow] (grade)--(fact); \draw[arrow] (loan)--(fact);
-\end{tikzpicture}
+\end{tikzpicture}}
 \caption{Proposed star schema (ER-style schema diagram).}
 \label{fig:star}
 \end{figure}
@@ -185,22 +188,57 @@ Figure~\ref{fig:sequence} shows the no-fabrication control flow. SQL must be gen
 
 \section{Machine Learning Models and Metrics}
 \subsection{Decision-Tree Default Classification}
-A decision tree \cite{hastie} will classify whether a held-out loan is fully paid or charged off. The target definition must be frozen before training and exclude statuses that do not provide an unambiguous outcome. The confusion matrix separates true positives (TP), true negatives (TN), false positives (FP), and false negatives (FN).
+A decision tree \cite{hastie} was evaluated for distinguishing fully paid from charged-off loans. The temporal split trains on 93,642 loans from 2015--2017 and evaluates on an untouched 2018 holdout of 6,358 loans. The classification threshold, 0.397727, was selected by maximizing out-of-fold (OOF) recall subject to an OOF-accuracy floor of 77\%; at that threshold, training OOF accuracy is 0.7714, recall is 0.2303, and $F_1$ is 0.3075. The confusion matrix below lists rows as actual negative/positive and columns as predicted negative/positive.
 \begin{align}
-\text{Precision} &= \frac{TP}{TP+FP}, &
-\text{Recall} &= \frac{TP}{TP+FN}\\
-F_1 &= \frac{2TP}{2TP+FP+FN}, &
-\text{Accuracy} &= \frac{TP+TN}{TP+TN+FP+FN}
+\text{Precision} &= \frac{TP}{TP+FP},\\
+\text{Recall} &= \frac{TP}{TP+FN},\\
+F_1 &= \frac{2TP}{2TP+FP+FN},\\
+\text{Accuracy} &= \frac{TP+TN}{TP+TN+FP+FN}.
 \end{align}
-ROC-AUC is the area under the true-positive-rate versus false-positive-rate curve across classification thresholds. No measured precision, recall, $F_1$, accuracy, or ROC-AUC value is available in the verified repository.
+\begin{table*}[!t]
+\caption{Temporal-Holdout Default-Classification Results}
+\label{tab:classification_results}
+\centering
+\footnotesize
+\renewcommand{\arraystretch}{0.9}
+\begin{tabularx}{\textwidth}{@{}Xrrr@{}}
+\toprule
+\textbf{Measure} & \textbf{Tuned (0.397727)} & \textbf{Majority} & \textbf{Prior max-$F_1$ (0.229)}\\
+\midrule
+2018 accuracy & 0.8003 & 0.8413 & 0.6291\\
+2018 precision & 0.3038 & --- & ---\\
+2018 recall & 0.2002 & 0 & 0.6571\\
+2018 $F_1$ & 0.2413 & 0 & 0.3599\\
+2018 ROC-AUC & 0.6869 & 0.5000 & ---\\
+2018 AP (PR-AUC) & 0.2671 & 0.1587 & ---\\
+Confusion matrix & $[[4886,463],[807,202]]$ & --- & ---\\
+\bottomrule
+\end{tabularx}
+\end{table*}
+The selected threshold trades some accuracy for positive-class detection relative to the majority baseline, but recall remains modest. The earlier max-$F_1$ threshold has higher recall and $F_1$ but substantially lower accuracy; these operating points show the accuracy--recall tradeoff, not overall superiority. The proposal's numeric threshold-compliance criterion has not been verified and is not claimed.
 
 \subsection{Linear Recovery Regression}
-Linear regression \cite{scikitlearn} may estimate total principal received or a defined loss-given-default outcome on defaulted records. The mean squared error (MSE) and coefficient of determination ($R^2$) are:
+Linear regression \cite{scikitlearn} was evaluated for a recovery-related outcome against a mean-prediction baseline. The mean squared error (MSE) and coefficient of determination ($R^2$) are:
 \begin{align}
 \mathrm{MSE} &= \frac{1}{n}\sum_{i=1}^{n}(y_i-\hat y_i)^2, &
 R^2 &= 1-\frac{\sum_i(y_i-\hat y_i)^2}{\sum_i(y_i-\bar y)^2}.
 \end{align}
-No measured MSE or $R^2$ value is presently available.
+\begin{table}[!t]
+\caption{Recovery-Regression Results}
+\label{tab:regression_results}
+\centering
+\small
+\begin{tabularx}{\columnwidth}{@{}Xrr@{}}
+\toprule
+\textbf{Measure} & \textbf{Linear regression} & \textbf{Mean baseline}\\
+\midrule
+MAE & 3011.69 & 3156.40\\
+RMSE & 3796.35 & 3464.18\\
+$R^2$ & $-3.311$ & $-2.589$\\
+\bottomrule
+\end{tabularx}
+\end{table}
+The model has lower MAE but higher RMSE and a more negative $R^2$ than the baseline, indicating a weak, mixed fit rather than overall improvement.
 
 \subsection{Model Outputs}
 The tree should expose depth, impurity, split thresholds, feature importance, and a text or graph representation to support auditable rules. The linear model should report coefficients and residual diagnostics. Scaling and encoding must be performed through a pipeline fitted only on training data.
@@ -256,28 +294,31 @@ Each response should include generated SQL, row count, and an abbreviated interp
 The dataset is partitioned into issue-date cohorts and a held-out test partition. ETL, training, and RAG configurations are to be recorded in a machine-readable configuration or seed file. Experiments should report package versions, split definition, random seeds, PostgreSQL version, hardware, model name, model quantization, and API latency conditions.
 
 \subsection{Results Status}
-No Kaggle CSV, database, model artifact, test log, benchmark file, or implementation source is present in the inspected worktree. Therefore, this report has no measured experimental result. Table~\ref{tab:status} states the evidence status without inventing values.
+The temporal model evaluation summary provides classification and regression metrics reported in Tables~\ref{tab:classification_results} and~\ref{tab:regression_results}. The underlying Kaggle CSV, model artifact, execution log, and full implementation are not present in the inspected worktree, so those results cannot be independently reproduced from this checkout. The RAG benchmark and full API/data-mart implementation remain unverified. Table~\ref{tab:status} distinguishes reported model results from missing artifacts.
 \begin{table}[!t]
 \caption{Evidence and Experimental-Result Status}
 \label{tab:status}
 \centering
-\begin{tabularx}{\columnwidth}{@{}X l@{}}
+\small
+\renewcommand{\arraystretch}{0.9}
+\begin{tabularx}{\columnwidth}{@{}p{0.40\columnwidth}X@{}}
 \toprule
 \textbf{Item} & \textbf{Verified status}\\
 \midrule
-Public dataset source & Proposed by project proposal\\
-CSV subset and row count & \placeholder{not verified}\\
+Dataset source & Proposed by project proposal\\
+Model split & 93,642 train; 6,358 holdout (2018)\\
+Classifier results & See Table~\ref{tab:classification_results}\\
+Regression results & See Table~\ref{tab:regression_results}\\
+Raw data/artifacts & \placeholder{not present for reproduction}\\
 PostgreSQL schema & \placeholder{not implemented}\\
-Decision-tree metrics & \placeholder{not measured}\\
-Regression metrics & \placeholder{not measured}\\
-40-query LLM benchmark & \placeholder{not implemented}\\
-FastAPI deployment & \placeholder{not implemented}\\
+40-query benchmark & \placeholder{not implemented}\\
+FastAPI service & \placeholder{not implemented}\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 \section{Evaluation}
-Evaluation will combine three complementary views: warehouse correctness, model validity, and RAG usefulness. Warehouse correctness will use reconciliations and referential checks. Model validity will use held-out test metrics and a baseline. RAG usefulness will use SQL correctness and latency; human judgments may be used for executive-summary clarity but should be separated from automatic metrics.
+Evaluation combines three complementary views: warehouse correctness, model validity, and RAG usefulness. Warehouse correctness still requires reconciliations and referential checks. The reported temporal model results show a classifier threshold tradeoff and mixed recovery-regression performance against a mean baseline; underlying files are needed for independent reproduction. RAG usefulness still requires measuring SQL correctness and latency; human judgments should be separated from automatic metrics.
 
 Recommended baseline comparisons are:
 \begin{itemize}
@@ -295,7 +336,7 @@ LLM generated SQL can hallucinate fields or produce semantically plausible but i
 Future work should add incremental ETL, slowly changing dimensions, tests for SQL and metric calculations, dashboards, retrieval evaluation, confidence reporting, query cancellation, audit logs, model monitoring, and an explicit fairness/bias analysis. An assignment of real-world LGD or life of loan values should require domain validation.
 
 \section{Conclusion}
-The proposal defines a coherent financial data-mart and agentic RAG project. The proposed star schema supports OLAP-style loan analysis; decision trees provide transparent default-risk rules; linear regression provides a recovery-oriented numerical baseline; and FastAPI provides a deployable interface. However, the inspected repository contains no implementation or measured evaluation at this time. The report therefore provides a complete design and reproducible methodology while keeping all unverified performance values absent. Implementation and experiments will need to populate the placeholders and evidence tables.
+The proposal defines a coherent financial data-mart and agentic RAG project, with a star schema for OLAP-style analysis and a proposed FastAPI interface. The supplied temporal evaluation reports measurable but qualified model results: the selected decision threshold favors an accuracy constraint over higher recall, while recovery regression improves MAE but not RMSE or $R^2$ versus the mean baseline. The full data mart, API, RAG benchmark, and raw artifacts remain unverified in the inspected checkout; the model metrics therefore require their source artifacts for independent reproduction.
 
 \begin{thebibliography}{00}
 \bibitem{lendingclub}{N. George, ``All Lending Club Loan Data,'' Kaggle, 2019. [Online]. Available: https://www.kaggle.com/datasets/wordsforthewise/lending-club}

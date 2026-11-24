@@ -17,8 +17,8 @@ Source: `CS7050_Project_Proposal.pdf`
 | Linear recovery / LGD analysis | Implemented for charged-off `total_rec_prncp` where sufficient variation exists |
 | FastAPI RAG backend | Implemented in `lending_club/api.py` |
 | RAG SQL benchmark | Documented sample set; offline tests execute every sample |
-| Classification metrics | Accuracy and ROC-AUC |
-| Recovery metrics | MSE and R-squared |
+| Classification metrics | Accuracy, precision, recall, F1, ROC-AUC, PR-AUC, confusion matrix, and majority-class baseline |
+| Recovery metrics | MAE, RMSE, R-squared, and training-mean baseline |
 
 ## Deviations and assumptions
 
