@@ -50,3 +50,6 @@ artifacts/
 *.snm
 *.synctex.gz
 *.toc
+
+# Keep project reports local-only
+docs/report.*
