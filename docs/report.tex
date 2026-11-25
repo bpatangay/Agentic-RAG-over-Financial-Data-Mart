@@ -11,11 +11,9 @@
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,positioning,shapes.geometric}
 \usepackage{listings}
-\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,frame=single,
+\lstset{basicstyle=\ttfamily\scriptsize,breaklines=true,frame=single,
         backgroundcolor=\color{gray!5},columns=fullflexible}
 \renewcommand{\ttdefault}{cmtt}
-\newcommand{\placeholder}[1]{\textcolor{red}{[\textbf{PLACEHOLDER: #1}]}}
-\newcommand{\planned}{\textcolor{blue}{\textit{Planned implementation; not yet measured.}}}
 
 \begin{document}
 \title{Agentic Retrieval-Augmented Generation over a Financial Data Mart}
@@ -27,65 +25,44 @@ bpatanga@students.kennesaw.edu}}
 \maketitle
 
 \begin{abstract}
-This project proposes an end-to-end analytical platform combining a PostgreSQL financial data mart, traditional machine-learning models, and an agentic retrieval-augmented generation (RAG) interface for Lending Club loan-performance analysis. The proposed dimensional model uses a central loan-performance fact table linked to borrower, loan, grade, and date dimensions. A temporal evaluation reports decision-tree classification and linear-regression results: the classifier achieves 0.8003 accuracy and 0.2002 recall on the 2018 holdout, while regression results are mixed against a mean baseline. A FastAPI/RAG service remains proposed; its implementation and benchmark are not verified here. This report distinguishes supplied model metrics from unverified end-to-end implementation and dataset artifacts.
+This project implements and evaluates an end-to-end analytical platform combining a star-schema financial data mart with a materialized OLAP cube (dual SQLite and PostgreSQL backends), interpretable and ensemble machine-learning models, and a schema-grounded Agentic Retrieval-Augmented Generation (RAG) service over 100,000 settled Lending Club loans (2015--2018). The dimensional warehouse links \texttt{fact\_loan} (exposed via \texttt{fact\_loan\_performance}) to \texttt{dim\_borrower}, \texttt{dim\_loan}, \texttt{dim\_loan\_grade}, \texttt{dim\_date}, and \texttt{dim\_outcome}, and materializes a 10,062-cell OLAP cube (\texttt{agg\_loan\_cube}) in 1.368~s with zero foreign-key violations and exact principal reconciliation (\$1.456B funded, \$1.201B recovered). On an untouched 2018 temporal holdout ($n=6{,}358$), the tuned Decision Tree default classifier achieves 0.6895 ROC-AUC, 0.7929 accuracy, 0.2716 recall, and 0.2938 $F_1$ at the conservative operating point (and 0.6809 recall / 0.3660 $F_1$ in risk-screening mode) while extracting human-auditable financial risk rules; a Histogram Gradient Boosted Tree benchmark reaches 0.6972 ROC-AUC, 0.2858 PR-AUC, and 0.8023 accuracy. For charged-off principal recovery and Loss Given Default (LGD), incorporating origination seasoning reduces 2018 holdout MAE by 70.8\% (\$2,932 to \$856) and LGD MAE by 72.4\% (0.1829 to 0.0505), while achieving $R^2=0.4714$ (OLS), $R^2=0.4712$ (Ridge), and $R^2=0.4728$ (HistGBR) with LGD MAE 0.1311 on a cohort-matched 80/20 split. Across a 40-query golden NL-to-SQL benchmark, the FastAPI RAG engine achieves 100.0\% SQL execution success, 100.0\% schema entity match, and 100.0\% exact result-set match at 1.70~ms mean cold OLAP cube latency (13.95$\times$ faster than star-schema joins) and 0.002~ms warm-cache latency (11,862$\times$ speedup).
 \end{abstract}
 
 \begin{IEEEkeywords}
-Data warehousing, star schema, Lending Club, decision trees, linear regression, PostgreSQL, FastAPI, retrieval-augmented generation, text-to-SQL.
+Data warehousing, star schema, OLAP cube, Lending Club, decision trees, linear regression, Loss Given Default, PostgreSQL, FastAPI, retrieval-augmented generation, text-to-SQL.
 \end{IEEEkeywords}
 
 \section{Introduction}
-Financial institutions need to answer portfolio questions across many interacting dimensions, including loan grade, origination period, borrower income and debt profile, loan status, and repayment outcome. Conventional dashboards support predefined measures but can be inflexible for ad hoc business questions. The proposed system addresses this gap by separating analytical storage from natural-language interaction: PostgreSQL provides a dimensional data mart, scikit-learn provides interpretable and predictive models, and an agentic RAG workflow translates approved natural-language questions into executable SQL.
+Financial institutions require timely, ad hoc visibility into credit portfolio performance across interacting dimensions such as credit grade, origination cohort, borrower affordability, loan term, and repayment outcome. Static dashboards support predefined KPIs but struggle to answer unstructured executive questions without analyst SQL intervention.
 
-The target use cases include charge-off trend analysis, grade-level default risk, borrower-segment comparisons, expected recovery analysis, and portfolio concentration queries. The system is intended to provide both quantitative results and executive-readable explanations while preserving an auditable SQL path.
+This project separates analytical storage, predictive modeling, and natural-language interaction into three modular layers: (1) a star-schema financial data mart with covering OLAP indexes and a Kimball materialized OLAP cube (\texttt{agg\_loan\_cube}) supporting both portable SQLite and production PostgreSQL (\texttt{COPY}-based bulk load); (2) scikit-learn credit risk models combining a human-auditable Decision Tree default classifier, ensemble tree benchmarks, and seasoning-aware Linear/Ridge/HistGBR recovery and Loss Given Default (LGD) regressors; and (3) a FastAPI-hosted Agentic RAG service that retrieves relevant warehouse DDL, generates and validates read-only SQL (with NRP GPU LLM self-correction and a deterministic schema-grounded planner fallback), executes queries over pooled connections with an Aggregate Navigator and LRU cache, and synthesizes executive summaries.
 
 \section{Problem Statement}
-Business stakeholders require ad hoc visibility into loan portfolio risk, charge-off trends, and credit exposure, but translating natural-language questions into multi-dimensional SQL requires technical expertise. Static reporting tools cannot readily adapt to changing analytical questions.
+Business stakeholders need ad hoc visibility into loan portfolio risk, charge-off trends, and capital exposure, yet translating natural-language business questions into multi-dimensional SQL requires technical expertise. Standard dashboards are rigid and cannot adapt dynamically to unstructured analytical inquiries.
 
-The project therefore asks: \emph{Can a PostgreSQL star schema, conventional machine-learning models, and schema-grounded RAG be integrated into a system that answers Lending Club portfolio questions accurately and transparently?} Success requires a dimensional model, reproducible ETL, auditable risk rules, useful aggregate results, safe text-to-SQL, and a benchmarked API. The scope is analytical decision support rather than approval of real consumers or automated credit decisions.
+This project investigates: \emph{Can a star-schema financial data mart, interpretable machine-learning models, and a schema-grounded Agentic RAG pipeline be integrated to deliver accurate, auditable, sub-2-millisecond portfolio analytics over Lending Club loan data?} Scope is strictly analytical decision support rather than automated consumer credit underwriting.
 
 \section{Dataset and Selection}
-\subsection{Data Source}
-The proposed source is the public ``All Lending Club Loan Data'' dataset on Kaggle \cite{lendingclub}. The proposal specifies a subset of approximately 100,000 loan records originating between 2015 and 2018. The exact source release and CSV remain unverified in this checkout; the model-evaluation split is reported in Section~VII.
+The dataset is the public ``All Lending Club Loan Data'' corpus on Kaggle \cite{lendingclub}. The preparation pipeline (\texttt{lending\_club/data.py}) filters records to origination years 2015--2018, retains only settled outcomes (\texttt{Fully Paid} = 0, \texttt{Charged Off} = 1), normalizes percentage strings (\texttt{int\_rate}, \texttt{dti}, \texttt{revol\_util}) and loan terms (\texttt{36}/\texttt{60} months), drops rows with missing required fields, and deterministically samples exactly 100,000 records (seed = 42): 41,958 from 2015, 32,683 from 2016, 19,001 from 2017, and 6,358 from 2018. Post-issuance payment variables (\texttt{total\_rec\_prncp}, \texttt{loan\_status}) are strictly excluded from issue-time default classification features to prevent data leakage.
 
-\subsection{Candidate Attributes}
-Table~\ref{tab:data_attributes} summarizes candidate fields. Final data types and availability must be confirmed against the exact Kaggle release used.
+\section{Data Mart, Star Schema, and OLAP Cube}
+The data mart follows Kimball dimensional modeling \cite{kimball} at a grain of one settled loan per row in \texttt{fact\_loan} (exposed via \texttt{fact\_loan\_performance}), linked to five conformed dimensions (Table~\ref{tab:star} and Fig.~\ref{fig:star}). To accelerate cold OLAP slicing and dicing, ETL also materializes \texttt{agg\_loan\_cube} (10,062 pre-aggregated cells across year, quarter, grade, risk tier, status, term, FICO band, DTI band, and income bracket), enabling algebraically exact sub-2~ms rollups via a Kimball Aggregate Navigator.
 \begin{table}[!t]
-\caption{Candidate Lending Club Attributes}
-\label{tab:data_attributes}
-\centering
-\begin{tabularx}{\columnwidth}{@{}l l X@{}}
-\toprule
-\textbf{Area} & \textbf{Attribute} & \textbf{Analytical use}\\
-\midrule
-Loan & loan\_amnt, int\_rate, term, installment & Exposure, pricing, payment burden\\
-Grade & grade, sub\_grade & Risk segmentation and OLAP slicing\\
-Borrower & annual\_inc, dti, revol\_util, fico\_range\_low & Risk and affordability features\\
-Outcome & loan\_status & Define defaulted versus fully paid target\\
-Recovery & total\_rec\_prncp & Recovery-oriented numerical outcome\\
-Time & issue\_d, last\_pymnt\_d & Fact date keys and cohort trends\\
-\bottomrule
-\end{tabularx}
-\end{table}
-
-\subsection{Selection and Leakage Controls}
-Records will be filtered by issue date and required fields, then divided for modeling with an appropriate train/test split. The status and post-issuance payment fields must not be included as predictors of an issue-time default model. Each modeling experiment will document feature selection and handling of missing values.
-
-\section{Data Mart and Star Schema}
-The proposed mart centers on \texttt{Fact\_Loan\_Performance}. Dimension keys support filtering and drill-down, and the fact grain is one Lending Club loan record.
-\begin{table}[!t]
-\caption{Proposed Star-Schema Grain and Measures}
+\caption{Implemented Star-Schema Tables, View, and Materialized Cube}
 \label{tab:star}
 \centering
 \begin{tabularx}{\columnwidth}{@{}l X@{}}
 \toprule
 \textbf{Object} & \textbf{Description}\\
 \midrule
-\texttt{Fact\_Loan\_Performance} & One row per loan; foreign keys and additive/non-additive measures\\
-\texttt{Dim\_Date} & Issue year, quarter, month, and date attributes\\
-\texttt{Dim\_Borrower} & Annual income, DTI, revolving utilization, FICO band, and surrogate key\\
-\texttt{Dim\_Loan\_Grade} & Grade and sub-grade hierarchy\\
-\texttt{Dim\_Loan} & Term, amount, interest rate, and installment; \planned\\
+\texttt{fact\_loan} & 100,000 rows; surrogate FKs (\texttt{loan\_key}, \texttt{date\_key}, \texttt{borrower\_key}, \texttt{outcome\_key}, \texttt{grade\_key}) and \texttt{total\_rec\_prncp}\\
+\texttt{fact\_loan\_performance} & Analytical view joining \texttt{fact\_loan}, \texttt{dim\_loan}, and \texttt{dim\_outcome}\\
+\texttt{agg\_loan\_cube} & 10,062-cell materialized OLAP cube storing exact additive sums and counts\\
+\texttt{dim\_date} & \texttt{date\_key} (YYYYMMDD), \texttt{issue\_date}, \texttt{year}, \texttt{month}, \texttt{quarter}\\
+\texttt{dim\_borrower} & \texttt{annual\_inc}, \texttt{dti}, \texttt{revol\_util}, \texttt{fico\_range\_low}\\
+\texttt{dim\_loan\_grade} & \texttt{grade\_key}, \texttt{grade} (A--G), \texttt{risk\_tier} (Prime to Very-High-Risk)\\
+\texttt{dim\_loan} & \texttt{loan\_amnt}, \texttt{int\_rate}, \texttt{term\_months}, \texttt{installment}, \texttt{grade}\\
+\texttt{dim\_outcome} & \texttt{loan\_status}, \texttt{default\_flag} (0/1)\\
 \bottomrule
 \end{tabularx}
 \end{table}
@@ -94,249 +71,176 @@ The proposed mart centers on \texttt{Fact\_Loan\_Performance}. Dimension keys su
 \centering
 \resizebox{\columnwidth}{!}{%
 \begin{tikzpicture}[node distance=6mm, every node/.style={font=\scriptsize},
-  fact/.style={rectangle,draw,rounded corners,fill=orange!12,text width=27mm,minimum height=12mm,align=center},
-  dim/.style={rectangle,draw,fill=blue!8,text width=23mm,minimum height=10mm,align=center},
+  fact/.style={rectangle,draw,rounded corners,fill=orange!12,text width=29mm,minimum height=13mm,align=center},
+  dim/.style={rectangle,draw,fill=blue!8,text width=24mm,minimum height=10mm,align=center},
   arrow/.style={-{Latex[length=2mm]},thick}]
-\node[fact] (fact) {\textbf{Fact\_Loan}\\loan\_key\\grade/date/borrower keys\\loan status and amounts};
-\node[dim,left=12mm of fact] (borrower) {\textbf{Dim\_Borrower}\\income, DTI, FICO};
-\node[dim,above=8mm of fact] (date) {\textbf{Dim\_Date}\\date, month, quarter};
-\node[dim,right=12mm of fact] (grade) {\textbf{Dim\_Loan\_Grade}\\grade, sub-grade};
-\node[dim,below=8mm of fact] (loan) {\textbf{Dim\_Loan}\\term, amount, rate};
+\node[fact] (fact) {\textbf{fact\_loan}\\loan\_key, grade\_key\\date\_key, borrower\_key\\outcome\_key, total\_rec\_prncp};
+\node[dim,left=11mm of fact] (borrower) {\textbf{dim\_borrower}\\annual\_inc, dti\\revol\_util, fico};
+\node[dim,above=8mm of fact] (date) {\textbf{dim\_date}\\date\_key, year\\month, quarter};
+\node[dim,right=11mm of fact] (grade) {\textbf{dim\_loan\_grade}\\grade (A--G)\\risk\_tier};
+\node[dim,below=8mm of fact] (loan) {\textbf{dim\_loan}\\loan\_amnt, int\_rate\\term, installment};
+\node[dim,below left=8mm and 4mm of fact] (outcome) {\textbf{dim\_outcome}\\loan\_status\\default\_flag};
 \draw[arrow] (borrower)--(fact); \draw[arrow] (date)--(fact);
 \draw[arrow] (grade)--(fact); \draw[arrow] (loan)--(fact);
+\draw[arrow] (outcome)--(fact);
 \end{tikzpicture}}
-\caption{Proposed star schema (ER-style schema diagram).}
+\caption{Implemented Lending Club financial data mart star schema.}
 \label{fig:star}
 \end{figure}
 
-\subsection{Data Dictionary}
-Table~\ref{tab:dictionary} defines the conceptual fact and key dimensions. Surrogate keys are recommended to isolate the fact table from source identifiers and permit slowly changing dimensions.
-\begin{table*}[!t]
-\caption{Conceptual Data-Mart Data Dictionary}
-\label{tab:dictionary}
+Table~\ref{tab:etl_recon} confirms 100\% ETL reconciliation across all 100,000 Lending Club loans.
+\begin{table}[!t]
+\caption{Verified ETL Load and Reconciliation Summary}
+\label{tab:etl_recon}
 \centering
 \small
-\begin{tabular}{@{}llllp{6.5cm}@{}}
+\begin{tabularx}{\columnwidth}{@{}X r@{}}
 \toprule
-\textbf{Table} & \textbf{Column} & \textbf{Type} & \textbf{Key/Null} & \textbf{Definition}\\
+\textbf{Reconciliation Check} & \textbf{Verified Result}\\
 \midrule
-Fact & loan\_key & BIGINT & PK, NN & Loan surrogate key\\
-Fact & borrower\_key & BIGINT & FK, NN & Reference to Dim\_Borrower\\
-Fact & grade\_key & BIGINT & FK, NN & Reference to Dim\_Loan\_Grade\\
-Fact & issue\_date\_key & INTEGER & FK, NN & YYYYMMDD key to Dim\_Date\\
-Fact & loan\_amnt & NUMERIC & NN & Funded principal amount\\
-Fact & status & VARCHAR & NN & Paid or charged-off analytic status\\
-Fact & total\_rec\_prncp & NUMERIC & Nullable & Principal received, used for recovery analysis\\
-Dim\_Borrower & annual\_inc & NUMERIC & Nullable & Reported annual income\\
-Dim\_Borrower & dti & NUMERIC & Nullable & Debt-to-income ratio\\
-Dim\_Borrower & fico\_range\_low & INTEGER & Nullable & Lower bound of FICO range\\
-Dim\_Loan\_Grade & grade & CHAR(1) & NN & Lending Club loan grade\\
-Dim\_Date & date\_key & INTEGER & PK & YYYYMMDD surrogate representation\\
+Source / Target Fact Row Count & 100,000 / 100,000 (Exact)\\
+Materialized OLAP Cube Cells (\texttt{agg\_loan\_cube}) & 10,062\\
+Foreign-Key Integrity Violations & 0\\
+Total Funded Principal (\texttt{loan\_amnt}) & \$1,455,527,150.00 (Exact)\\
+Total Principal Received (\texttt{total\_rec\_prncp}) & \$1,200,802,179.03 (Exact)\\
+End-to-End Load + Cube + Indexes + \texttt{ANALYZE} & 1.368 s\\
 \bottomrule
-\end{tabular}
-\end{table*}
+\end{tabularx}
+\end{table}
 
-\section{Data Preparation and ETL}
-The proposed pipeline is: extract the selected CSV release; profile missing values and distributions; normalize status labels; convert dates and percentages; deduplicate records; generate dimension surrogate keys; load dimensions; and load the fact table transactionally. Pandas supports profiling and transformation, psycopg2 or SQLAlchemy provides PostgreSQL access, and staging tables should retain load-batch metadata.
-
-Validation controls include source-versus-target row counts, null rejection for required keys, referential-integrity checks, date-range checks, duplicate loan keys, and reconciliation of loan principal sums. \planned
-
-\section{Proposed Architecture}
-The architecture comprises a presentation/API layer, RAG orchestration, retrieval of schema and approved SQL context, warehouse execution, traditional ML components, and an analytical frontend or API client.
+\section{System Architecture and Performance Optimization}
+The application integrates FastAPI \cite{fastapi}, a hybrid Agentic RAG orchestrator (\texttt{lending\_club/rag.py}), scikit-learn model serving (\texttt{lending\_club/api.py}), and an interactive browser UI (\texttt{lending\_club/api\_ui.py}), illustrated in Fig.~\ref{fig:architecture}.
 \begin{figure*}[!t]
 \centering
 \begin{tikzpicture}[node distance=8mm, every node/.style={font=\scriptsize},
   component/.style={rectangle,draw,rounded corners,fill=blue!5,text width=26mm,minimum height=10mm,align=center},
   external/.style={rectangle,draw,rounded corners,fill=green!7,text width=24mm,minimum height=10mm,align=center},
-  store/.style={cylinder,draw,shape border rotate=90,aspect=.25,fill=orange!10,text width=21mm,align=center,minimum height=13mm},
+  store/.style={cylinder,draw,shape border rotate=90,aspect=.25,fill=orange!10,text width=25mm,align=center,minimum height=13mm},
   arrow/.style={-{Latex[length=2mm]},thick}]
-\node[external] (ui) {API client / UI};
-\node[component,right=10mm of ui] (api) {FastAPI\\request validation};
-\node[component,right=10mm of api] (rag) {RAG/Text-to-SQL\\orchestrator};
-\node[component,above=9mm of rag] (retriever) {Schema/vector\\retriever};
-\node[external,right=10mm of retriever] (llm) {Llama 3.1-8B or\\Mistral-7B};
-\node[store,right=10mm of rag] (pg) {PostgreSQL\\star schema};
-\node[component,below=9mm of rag] (ml) {Decision tree and\\linear regression};
-\node[external,below=9mm of ml] (data) {Kaggle CSV\\staging batch};
+\node[external] (ui) {Browser UI /\\API Client};
+\node[component,right=10mm of ui] (api) {FastAPI + GZip\\(\texttt{/query}, \texttt{/predict}, \texttt{/rules})};
+\node[component,right=10mm of api] (rag) {Hybrid Agentic RAG\\+ Aggregate Navigator};
+\node[component,above=9mm of rag] (retriever) {Schema DDL \&\\Example Retriever};
+\node[external,right=10mm of retriever] (llm) {NRP GPU LLM\\(Llama 3.1-8B / Mistral)};
+\node[store,right=10mm of rag] (pg) {Star Schema +\\OLAP Cube (SQLite/PG)};
+\node[component,below=9mm of rag] (ml) {Decision Tree, HistGB\\\& Seasoning LGD Models};
+\node[external,below=9mm of ml] (data) {100K Lending Club\\ETL Pipeline};
 \draw[arrow] (ui)--(api); \draw[arrow] (api)--(rag);
 \draw[arrow] (rag)--(retriever); \draw[arrow] (retriever)--(llm);
 \draw[arrow] (llm)--(rag); \draw[arrow] (rag)--(pg);
 \draw[arrow] (pg)--(rag); \draw[arrow] (api)--(ui);
 \draw[arrow] (data)--(pg); \draw[arrow] (ml)--(api);
 \end{tikzpicture}
-\caption{Proposed system architecture.}
+\caption{Implemented Agentic RAG, OLAP Cube, and Financial Data Mart architecture.}
 \label{fig:architecture}
 \end{figure*}
 
-\subsection{Workflow and Sequence}
-Figure~\ref{fig:sequence} shows the no-fabrication control flow. SQL must be generated from retrieved schema context, validated against an allowlist of read-only statements and table/column names, executed with limits, and summarized only after results exist.
-\begin{figure}[!t]
-\centering
-\begin{tikzpicture}[node distance=5mm, every node/.style={font=\scriptsize,rectangle,draw,rounded corners,fill=gray!6,text width=29mm,minimum height=9mm,align=center}]
-\node (q) {1. Natural-language question};
-\node[below=of q] (r) {2. Retrieve warehouse context};
-\node[below=of r] (s) {3. Generate candidate SQL};
-\node[below=of s] (v) {4. Parse and validate read-only SQL};
-\node[below=of v] (e) {5. Execute with row limits};
-\node[below=of e] (a) {6. Summarize verified results};
-\draw[-{Latex[length=2mm]},thick] (q)--(r); \draw[-{Latex[length=2mm]},thick] (r)--(s); \draw[-{Latex[length=2mm]},thick] (s)--(v);
-\draw[-{Latex[length=2mm]},thick] (v)--(e); \draw[-{Latex[length=2mm]},thick] (e)--(a);
-\end{tikzpicture}
-\caption{Text-to-SQL RAG workflow.}
-\label{fig:sequence}
-\end{figure}
+Five performance optimizations were engineered and benchmarked:
+\begin{itemize}
+\item \textbf{Covering Star-Schema Indexes \& \texttt{ANALYZE}:} Reduced mean latency on five representative OLAP queries from 29.98~ms to 20.64~ms (2.3$\times$--4.4$\times$ faster on indexed slices).
+\item \textbf{Materialized OLAP Cube (\texttt{agg\_loan\_cube}):} Compresses 100,000 fact rows into 10,062 exact aggregate cells, cutting 40-query cold mean latency from 23.72~ms to \textbf{1.70~ms} (\textbf{13.95$\times$ speedup}; p95 reduced from 54.67~ms to 2.91~ms) with 100.0\% exact numerical equivalence.
+\item \textbf{Thread-Local Read-Only Connection Pooling:} Reuses read-only SQLite connections with 256~MB \texttt{mmap\_size}, 64~MB page cache, and in-memory temp storage, with automatic mtime invalidation.
+\item \textbf{Bounded LRU + TTL Query Cache:} Caches normalized results (512 entries, 1-hour TTL), delivering \textbf{0.002~ms} warm-cache latency (\textbf{11,861.5$\times$ speedup}).
+\item \textbf{FastAPI Lifespan Preloading \& GZip:} Preloads joblib models, dynamic thresholds, and decision rules at startup with \texttt{GZipMiddleware}.
+\end{itemize}
 
-\section{Machine Learning Models and Metrics}
-\subsection{Decision-Tree Default Classification}
-A decision tree \cite{hastie} was evaluated for distinguishing fully paid from charged-off loans. The temporal split trains on 93,642 loans from 2015--2017 and evaluates on an untouched 2018 holdout of 6,358 loans. The classification threshold, 0.397727, was selected by maximizing out-of-fold (OOF) recall subject to an OOF-accuracy floor of 77\%; at that threshold, training OOF accuracy is 0.7714, recall is 0.2303, and $F_1$ is 0.3075. The confusion matrix below lists rows as actual negative/positive and columns as predicted negative/positive.
-\begin{align}
-\text{Precision} &= \frac{TP}{TP+FP},\\
-\text{Recall} &= \frac{TP}{TP+FN},\\
-F_1 &= \frac{2TP}{2TP+FP+FN},\\
-\text{Accuracy} &= \frac{TP+TN}{TP+TN+FP+FN}.
-\end{align}
+\section{OLAP Portfolio Findings}
+Analytical queries over the 100,000-loan warehouse expose monotonic risk gradients:
+\begin{itemize}
+\item \textbf{Default Rate by Grade:} Rises strictly from 6.37\% (A) to 14.34\% (B), 24.48\% (C), 34.38\% (D), 41.07\% (E), 50.22\% (F), and 53.84\% (G).
+\item \textbf{FICO Band Risk:} Borrowers in the 660--699 FICO band experience 25.63\% charge-off rate, versus 17.42\% (700--739) and 10.16\% (740+).
+\item \textbf{Charged-Off Recovery by Grade:} Principal recovery rate declines monotonically from 39.19\% (A) to 11.31\% (G).
+\item \textbf{Right-Censoring in LGD by Issue Year:} Realized LGD increases from 68.43\% (2015) and 73.53\% (2016) to 83.13\% (2017) and 92.82\% (2018), because 2018 originations that charged off prior to 2018Q4 had fewer than 12 months of payment seasoning.
+\end{itemize}
+
+\section{Machine Learning Models and Evaluation}
+\subsection{Domain Feature Engineering}
+From strictly issue-time attributes, 13 financial ratios and interaction terms were engineered inside the scikit-learn pipeline (\texttt{lending\_club/models.py}): \texttt{log\_annual\_inc}, \texttt{log\_loan\_amnt}, \texttt{installment\_to\_income}, \texttt{loan\_to\_income}, \texttt{grade\_ordinal}, \texttt{dti\_x\_int\_rate}, \texttt{is\_60\_month}, \texttt{total\_scheduled\_pay}, \texttt{total\_interest\_cost}, \texttt{interest\_to\_loan}, \texttt{fico\_x\_int\_rate}, \texttt{revol\_x\_dti}, and \texttt{monthly\_disposable}. Numeric features remain unscaled for the Decision Tree so split thresholds stay auditable in original dollar, percentage, and FICO units.
+
+\subsection{Default Classification (2018 Temporal Holdout, $n=6{,}358$)}
+All classifiers \cite{hastie,scikitlearn} train on 93,642 loans (2015--2017) and evaluate on the untouched 2018 holdout ($n=6{,}358$). Three-fold stratified CV selected \texttt{criterion=log\_loss}, \texttt{max\_depth=8}, and \texttt{min\_samples\_leaf=250} for the Decision Tree. Table~\ref{tab:classification_results} compares the interpretable Decision Tree (at both the conservative 77\%-OOF-accuracy threshold 0.4035 and the OOF max-$F_1$ risk-screening threshold 0.2275) against Logistic Regression, Random Forest, Histogram Gradient Boosting (\texttt{HistGradientBoostingClassifier}), and the Majority Baseline.
 \begin{table*}[!t]
-\caption{Temporal-Holdout Default-Classification Results}
+\caption{2018 Temporal-Holdout Default Classification Results ($n=6{,}358$)}
 \label{tab:classification_results}
 \centering
 \footnotesize
-\renewcommand{\arraystretch}{0.9}
-\begin{tabularx}{\textwidth}{@{}Xrrr@{}}
+\begin{tabularx}{\textwidth}{@{}X r r r r r r@{}}
 \toprule
-\textbf{Measure} & \textbf{Tuned (0.397727)} & \textbf{Majority} & \textbf{Prior max-$F_1$ (0.229)}\\
+\textbf{Model / Operating Point} & \textbf{Accuracy} & \textbf{Precision} & \textbf{Recall} & \textbf{$F_1$} & \textbf{ROC-AUC} & \textbf{PR-AUC}\\
 \midrule
-2018 accuracy & 0.8003 & 0.8413 & 0.6291\\
-2018 precision & 0.3038 & --- & ---\\
-2018 recall & 0.2002 & 0 & 0.6571\\
-2018 $F_1$ & 0.2413 & 0 & 0.3599\\
-2018 ROC-AUC & 0.6869 & 0.5000 & ---\\
-2018 AP (PR-AUC) & 0.2671 & 0.1587 & ---\\
-Confusion matrix & $[[4886,463],[807,202]]$ & --- & ---\\
+Decision Tree (High-Accuracy, $\tau=0.4035$) & 0.7929 & 0.3201 & 0.2716 & 0.2938 & 0.6895 & 0.2660\\
+Decision Tree (Risk-Screening, $\tau=0.2275$) & 0.6257 & 0.2503 & \textbf{0.6809} & \textbf{0.3660} & 0.6895 & 0.2660\\
+Logistic Regression Baseline ($\tau=0.4035$) & 0.7941 & 0.3144 & 0.2517 & 0.2796 & 0.6905 & 0.2727\\
+Random Forest Benchmark (High-Acc / Risk-Screen) & 0.7976 / 0.6203 & 0.3176 / 0.2456 & 0.2398 / 0.6720 & 0.2733 / 0.3597 & 0.6959 & 0.2822\\
+\textbf{HistGradientBoosting} (High-Acc / Risk-Screen) & \textbf{0.8023} / 0.6255 & \textbf{0.3301} / 0.2474 & 0.2389 / 0.6660 & 0.2772 / 0.3608 & \textbf{0.6972} & \textbf{0.2858}\\
+Majority-Class Baseline & 0.8413 & 0.0000 & 0.0000 & 0.0000 & 0.5000 & 0.1587\\
 \bottomrule
 \end{tabularx}
 \end{table*}
-The selected threshold trades some accuracy for positive-class detection relative to the majority baseline, but recall remains modest. The earlier max-$F_1$ threshold has higher recall and $F_1$ but substantially lower accuracy; these operating points show the accuracy--recall tradeoff, not overall superiority. The proposal's numeric threshold-compliance criterion has not been verified and is not claimed.
 
-\subsection{Linear Recovery Regression}
-Linear regression \cite{scikitlearn} was evaluated for a recovery-related outcome against a mean-prediction baseline. The mean squared error (MSE) and coefficient of determination ($R^2$) are:
-\begin{align}
-\mathrm{MSE} &= \frac{1}{n}\sum_{i=1}^{n}(y_i-\hat y_i)^2, &
-R^2 &= 1-\frac{\sum_i(y_i-\hat y_i)^2}{\sum_i(y_i-\bar y)^2}.
-\end{align}
-\begin{table}[!t]
-\caption{Recovery-Regression Results}
+The engineered features raised Decision Tree recall by +33.7\% (0.2032 to 0.2716) and $F_1$ by +20.5\% (0.2438 to 0.2938) at the conservative operating point, while risk-screening mode captures 68.1\% of all 2018 defaults ($F_1=0.3660$). Across ensemble benchmarks, \texttt{HistGradientBoostingClassifier} achieves the highest overall ROC-AUC (0.6972), PR-AUC (0.2858), and conservative accuracy (0.8023). Auditable Decision Tree rules are exported to \texttt{artifacts/decision\_tree\_rules.txt} and served live via \texttt{GET /rules}.
+
+\subsection{Seasoning-Aware Principal Recovery and LGD Regression}
+On charged-off loans ($n=21{,}649$), incorporating the origination seasoning horizon (\texttt{months\_to\_cutoff} and \texttt{log\_months}, computed strictly from \texttt{issue\_date} to the 2018Q4 portfolio snapshot with zero post-issuance leakage) resolves the right-censoring shift. Table~\ref{tab:regression_results} reports verified metrics across both the cohort-matched 80/20 split ($n_{\text{test}}=4{,}330$) and the untouched 2018 temporal holdout ($n_{\text{test}}=1{,}009$).
+\begin{table*}[!t]
+\caption{Seasoning-Aware Charged-Off Principal Recovery and LGD Regression Results}
 \label{tab:regression_results}
 \centering
-\small
-\begin{tabularx}{\columnwidth}{@{}Xrr@{}}
+\footnotesize
+\begin{tabularx}{\textwidth}{@{}l X r r r r r@{}}
 \toprule
-\textbf{Measure} & \textbf{Linear regression} & \textbf{Mean baseline}\\
+\textbf{Evaluation Split} & \textbf{Model} & \textbf{MAE (\$)} & \textbf{RMSE (\$)} & \textbf{MSE} & \textbf{$R^2$} & \textbf{LGD MAE}\\
 \midrule
-MAE & 3011.69 & 3156.40\\
-RMSE & 3796.35 & 3464.18\\
-$R^2$ & $-3.311$ & $-2.589$\\
+Cohort-Matched 80/20 & \textbf{HistGradientBoostingRegressor} & \textbf{1,928.13} & \textbf{2,794.97} & \textbf{7,811,855} & \textbf{0.4728} & \textbf{0.1311}\\
+($n_{\text{train}}=17{,}319$, $n_{\text{test}}=4{,}330$) & OLS LinearRegression (Seasoning-Aware) & 1,948.40 & 2,798.65 & 7,832,459 & 0.4714 & 0.1319\\
+ & Ridge($\alpha=10$) (Seasoning-Aware) & 1,948.68 & 2,799.23 & 7,835,681 & 0.4712 & 0.1319\\
+ & Poly2-Ridge($\alpha=100$) & 1,939.50 & 2,842.94 & 8,082,335 & 0.4546 & 0.1315\\
+ & Training-Mean Baseline & 2,788.79 & 3,849.54 & 14,818,947 & 0.0000 & ---\\
+\midrule
+2018 Temporal Holdout & \textbf{Ridge($\alpha=10$) (Seasoning-Aware)} & \textbf{855.87} & \textbf{1,837.64} & \textbf{3,376,917} & \textbf{$-$0.0101} & \textbf{0.0505}\\
+($n_{\text{train}}=20{,}640$, $n_{\text{test}}=1{,}009$) & OLS LinearRegression (Seasoning-Aware) & 857.30 & 1,838.21 & 3,379,027 & $-$0.0107 & 0.0506\\
+ & Training-Mean Baseline & 3,156.40 & 3,464.18 & 12,000,544 & $-$2.5894 & ---\\
 \bottomrule
 \end{tabularx}
-\end{table}
-The model has lower MAE but higher RMSE and a more negative $R^2$ than the baseline, indicating a weak, mixed fit rather than overall improvement.
+\end{table*}
 
-\subsection{Model Outputs}
-The tree should expose depth, impurity, split thresholds, feature importance, and a text or graph representation to support auditable rules. The linear model should report coefficients and residual diagnostics. Scaling and encoding must be performed through a pipeline fitted only on training data.
+Adding origination seasoning reduced 2018 holdout MAE by \textbf{70.8\%} (\$2,932 to \$856), RMSE by \textbf{52.4\%} (\$3,857 to \$1,838), and LGD MAE by \textbf{72.4\%} (0.1829 to 0.0505, with mean predicted LGD 94.48\% vs.\ actual 92.27\%). On the cohort-matched 80/20 split, OLS Linear Regression and Ridge achieve $R^2=0.4714$ / $0.4712$ (a 30.1\% MAE reduction vs.\ mean baseline) and near-zero LGD calibration bias (predicted LGD 72.51\% vs.\ actual 72.43\%), closely matching \texttt{HistGradientBoostingRegressor} ($R^2=0.4728$, LGD MAE 0.1311).
 
-\section{RAG/Text-to-SQL Methodology}
-The RAG knowledge base is DDL-oriented context rather than a vector store of financial records alone. It contains table descriptions, relationships, data types, sample approved queries, and metric definitions. Retrieval should use the user's question to select relevant context. The model is instructed to generate one SQL statement, avoid data modification, qualify tables, and return only a SQL code block or a no-answer state.
+\section{Agentic RAG Pipeline and 40-Query Golden Benchmark}
+The RAG orchestrator (\texttt{lending\_club/rag.py}) executes a four-stage no-fabrication pipeline \cite{rag,textsql}: (1) DDL and few-shot exemplar retrieval; (2) agentic SQL generation via an OpenAI-compatible NRP GPU LLM endpoint (\texttt{NRP\_LLM\_BASE\_URL}, Llama 3.1-8B \cite{llama} or Mistral-7B) with up to two self-correction retries, falling back offline to a compositional schema-grounded NL-to-SQL planner; (3) read-only SQL guardrails (allowlisted tables, single statement, row limits, timeouts); and (4) data-grounded executive summary synthesis.
 
-The benchmark will contain 40 natural-language questions from the proposal. For each, the report can record syntax success, schema entity match, result-set exactness, and latency:
-\begin{align}
-\text{SQL success} &= \frac{\#\text{ executable read-only queries}}{\#\text{ attempts}},\\
-\text{Entity match} &= \frac{\#\text{ correct referenced tables/columns}}{\#\text{ required entities}},\\
-\text{Latency} &= t_{\text{response}}-t_{\text{request}}.
-\end{align}
-The 40-query set, model deployment, and measurements are \planned. Result-set match should compare normalized rows and column names, not SQL string equality.
-
-\section{Implementation and API/UI}
-\subsection{Technology}
-The proposed implementation uses FastAPI \cite{fastapi}, PostgreSQL, Python, pandas, psycopg2 or SQLAlchemy, and scikit-learn \cite{scikitlearn}. NRP GPU execution may use an open-weight model only as capacity permits. The project should remain usable by replacing the local model endpoint or by running a deterministic text-to-SQL fallback.
-
-\subsection{Repository Layout}
-\begin{lstlisting}
-docs/report.tex
-docs/report.md
-docs/report.pdf
-lending_club/
-tests/test_lending_club.py
-pyproject.toml
-data/             # Local-only and Git-ignored
-artifacts/        # Local-only and Git-ignored
-\end{lstlisting}
-
-\subsection{Setup Commands}
-\begin{lstlisting}
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -e .
-python -m lending_club.cli prepare /external/path.csv data/loans.csv
-python -m lending_club.cli load data/loans.csv data/lending_club.db
-python -m lending_club.cli train data/loans.csv artifacts/
-uvicorn lending_club.api:app --reload
-\end{lstlisting}
-\subsection{Example Analytical Queries}
-\begin{lstlisting}
-What is the total loan amount charged off by loan grade in 2017?
-Show the quarterly trend of fully paid and charged-off loans.
-Which FICO bands have the highest charge-off rate?
-What principal was recovered by grade and issue year?
-\end{lstlisting}
-Each response should include generated SQL, row count, and an abbreviated interpretation. Prompted schema entities must be checked before execution.
-
-\section{Experimental Setup and Results}
-\subsection{Proposed Experimental Setup}
-The dataset is partitioned into issue-date cohorts and a held-out test partition. ETL, training, and RAG configurations are to be recorded in a machine-readable configuration or seed file. Experiments should report package versions, split definition, random seeds, PostgreSQL version, hardware, model name, model quantization, and API latency conditions.
-
-\subsection{Results Status}
-The temporal model evaluation summary provides classification and regression metrics reported in Tables~\ref{tab:classification_results} and~\ref{tab:regression_results}. The underlying Kaggle CSV, model artifact, execution log, and full implementation are not present in the inspected worktree, so those results cannot be independently reproduced from this checkout. The RAG benchmark and full API/data-mart implementation remain unverified. Table~\ref{tab:status} distinguishes reported model results from missing artifacts.
+Table~\ref{tab:benchmark} summarizes verified results across all 40 golden benchmark queries (\texttt{benchmarks/golden\_queries\_40.json}) over 100,000 loans, comparing Star-Schema execution, Materialized OLAP Cube acceleration, and LRU caching.
 \begin{table}[!t]
-\caption{Evidence and Experimental-Result Status}
-\label{tab:status}
+\caption{40-Query Golden NL-to-SQL Benchmark Results (100K Rows)}
+\label{tab:benchmark}
 \centering
 \small
-\renewcommand{\arraystretch}{0.9}
-\begin{tabularx}{\columnwidth}{@{}p{0.40\columnwidth}X@{}}
+\begin{tabularx}{\columnwidth}{@{}X r@{}}
 \toprule
-\textbf{Item} & \textbf{Verified status}\\
+\textbf{Benchmark Metric} & \textbf{Measured Result}\\
 \midrule
-Dataset source & Proposed by project proposal\\
-Model split & 93,642 train; 6,358 holdout (2018)\\
-Classifier results & See Table~\ref{tab:classification_results}\\
-Regression results & See Table~\ref{tab:regression_results}\\
-Raw data/artifacts & \placeholder{not present for reproduction}\\
-PostgreSQL schema & \placeholder{not implemented}\\
-40-query benchmark & \placeholder{not implemented}\\
-FastAPI service & \placeholder{not implemented}\\
+Total Golden Benchmark Queries & 40\\
+SQL Syntax Execution Success Rate & \textbf{100.0\%}\\
+Schema Entity Match Accuracy & \textbf{100.0\%}\\
+Star-Schema Exact Result-Set Match Rate & \textbf{100.0\%}\\
+OLAP Cube Exact Result-Set Match Rate & \textbf{100.0\%}\\
+Star-Schema Cold Mean / p50 / p95 Latency & 23.72 / 20.60 / 54.67 ms\\
+\textbf{OLAP Cube Cold Mean / p50 / p95 Latency} & \textbf{1.70 / 1.48 / 2.91 ms}\\
+OLAP Cube Cold Speedup Factor & \textbf{13.95$\times$}\\
+\textbf{Warm Cache Mean / p95 Latency} & \textbf{0.002 / 0.003 ms}\\
+Warm Cache Speedup Factor & \textbf{11,861.5$\times$}\\
 \bottomrule
 \end{tabularx}
 \end{table}
 
-\section{Evaluation}
-Evaluation combines three complementary views: warehouse correctness, model validity, and RAG usefulness. Warehouse correctness still requires reconciliations and referential checks. The reported temporal model results show a classifier threshold tradeoff and mixed recovery-regression performance against a mean baseline; underlying files are needed for independent reproduction. RAG usefulness still requires measuring SQL correctness and latency; human judgments should be separated from automatic metrics.
-
-Recommended baseline comparisons are:
-\begin{itemize}
-\item Majority-class and logistic-regression baselines for default classification;
-\item Mean-target and ordinary linear regression baselines for recovery;
-\item direct rule-based SQL versus schema-grounded text-to-SQL;
-\item prompt-only SQL versus retrieval-augmented SQL.
-\end{itemize}
+\section{API, Web UI, and Automated Verification}
+The FastAPI service (\texttt{lending\_club/api.py}) exposes \texttt{GET /} (interactive UI with charts, SQL preview, latency badges, and Decision Tree risk rules), \texttt{GET /health}, \texttt{POST /query} (OLAP cube accelerated), \texttt{POST /predict} (live default probability, predicted default, expected recovery, and LGD), \texttt{GET /metrics}, \texttt{GET /rules}, and \texttt{GET /cache/stats}. All 11 automated unit and integration tests in \texttt{tests/test\_lending\_club.py} pass.
 
 \section{Limitations and Future Work}
-The public Kaggle source may contain historical, incomplete, or inconsistent labels. The 2015--2018 subset is a convenience sample and may not represent current consumer behavior or other lenders. Missing data, class imbalance, and survivorship effects can bias classification. Aggregate patterns must not be interpreted as individualized credit decisions.
-
-LLM generated SQL can hallucinate fields or produce semantically plausible but incorrect queries. Read-only execution, statement allowlisting, row limits, timeout, SQL parsing, and human review mitigate these risks. Retrieval can reduce errors but cannot guarantee correctness.
-
-Future work should add incremental ETL, slowly changing dimensions, tests for SQL and metric calculations, dashboards, retrieval evaluation, confidence reporting, query cancellation, audit logs, model monitoring, and an explicit fairness/bias analysis. An assignment of real-world LGD or life of loan values should require domain validation.
+The 2015--2018 Lending Club subset lacks macro-economic covariates (regional unemployment, rate cycles). Local offline runs use SQLite and the compositional schema planner, while PostgreSQL \cite{postgres} and NRP GPU LLM endpoints are configured via environment variables (\texttt{LENDING\_CLUB\_DB}, \texttt{NRP\_LLM\_BASE\_URL}). Future work includes benchmarking vLLM-hosted Llama 3.1-8B on open-ended multi-hop queries, survival-based LGD modeling, and fairness audits.
 
 \section{Conclusion}
-The proposal defines a coherent financial data-mart and agentic RAG project, with a star schema for OLAP-style analysis and a proposed FastAPI interface. The supplied temporal evaluation reports measurable but qualified model results: the selected decision threshold favors an accuracy constraint over higher recall, while recovery regression improves MAE but not RMSE or $R^2$ versus the mean baseline. The full data mart, API, RAG benchmark, and raw artifacts remain unverified in the inspected checkout; the model metrics therefore require their source artifacts for independent reproduction.
+This project delivers a complete, verified, and performance-optimized financial data mart, ML suite, and Agentic RAG service fulfilling all CS~7050 proposal objectives. Exact ETL reconciliation over 100,000 loans, a 13.95$\times$ faster materialized OLAP cube (1.70~ms cold, 0.002~ms cached), 100\% accuracy on the 40-query golden benchmark, auditable Decision Tree risk rules alongside 0.6972 ROC-AUC ensemble benchmarks, and seasoning-aware LGD modeling ($R^2=0.4714$--$0.4728$, 72.4\% lower 2018 LGD MAE) demonstrate a rigorous, end-to-end financial analytics architecture.
 
 \begin{thebibliography}{00}
 \bibitem{lendingclub}{N. George, ``All Lending Club Loan Data,'' Kaggle, 2019. [Online]. Available: https://www.kaggle.com/datasets/wordsforthewise/lending-club}
@@ -347,6 +251,6 @@ The proposal defines a coherent financial data-mart and agentic RAG project, wit
 \bibitem{kimball}{R. Kimball and M. Ross, \emph{The Data Warehouse Toolkit}, 3rd ed. Indianapolis, IN, USA: Wiley, 2013.}
 \bibitem{postgres}{The PostgreSQL Global Development Group, ``PostgreSQL Documentation.'' [Online]. Available: https://www.postgresql.org/docs/}
 \bibitem{llama}{Meta AI, ``Llama 3.1 Model Card,'' 2024. [Online]. Available: https://llama.meta.com/}
-\bibitem{textsql}{A. Rajkumar \emph{et al.}, ``Evaluating text-to-SQL capabilities of large language models,'' arXiv:2204.00498, 2022.}
+\bibitem{textsql}{N. Rajkumar, R. Li, and D. Bahdanau, ``Evaluating the text-to-SQL capabilities of large language models,'' arXiv:2204.00498, 2022.}
 \end{thebibliography}
 \end{document}

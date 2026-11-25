@@ -5,11 +5,17 @@ from fastapi.testclient import TestClient
 
 from lending_club.api import app
 import lending_club.api as api_module
+from lending_club.cli import main, run_benchmark
 from lending_club.data import prepare_lending_data
 from lending_club.etl import load_lending_data
 from lending_club.models import _select_decision_threshold, train_models
-from lending_club.rag import SUPPORTED, generate_sql, answer_question
-from lending_club.cli import main
+from lending_club.rag import (
+    SUPPORTED,
+    answer_question,
+    clear_cache,
+    generate_sql,
+    validate_readonly_sql,
+)
 
 
 def raw_fixture(rows=12):
@@ -60,26 +66,58 @@ def test_prepare_reports_missing_columns(tmp_path):
 
 
 def test_etl_and_rag(tmp_path):
+    clear_cache()
     database = tmp_path / "loans.db"
     frame = prepared_fixture(tmp_path)
-    load_lending_data(frame, database)
+    stats = load_lending_data(frame, database)
+    assert stats["row_count_match"] is True
+    assert stats["foreign_key_violations"] == 0
     result = answer_question("What is the default rate by year?", str(database))
     assert result["rows"]
     assert "SELECT" in result["sql"]
     assert generate_sql("hello")[0] is None
 
 
+def test_sql_guardrails_reject_writes_and_unknown_tables():
+    for bad_sql in (
+        "DROP TABLE fact_loan",
+        "DELETE FROM dim_loan",
+        "SELECT * FROM fact_loan; DROP TABLE dim_date",
+        "SELECT * FROM sqlite_master",
+    ):
+        try:
+            validate_readonly_sql(bad_sql)
+            assert False, f"Expected ValueError for {bad_sql}"
+        except ValueError:
+            pass
+
+
 def test_all_documented_sample_questions_execute(tmp_path):
+    clear_cache()
     database = tmp_path / "loans.db"
     frame = prepared_fixture(tmp_path, rows=30)
     load_lending_data(frame, database)
     for question in SUPPORTED:
         sql, explanation = generate_sql(question)
         assert sql is not None
-        result = answer_question(question, str(database))
+        result = answer_question(question, str(database), use_cache=False)
         assert result["sql"] == sql
         assert result["answer"] == explanation
         assert isinstance(result["rows"], list)
+
+
+def test_golden_40_benchmark_executes_cleanly(tmp_path):
+    clear_cache()
+    database = tmp_path / "loans.db"
+    frame = prepared_fixture(tmp_path, rows=60)
+    load_lending_data(frame, database)
+    bench_file = Path("benchmarks/golden_queries_40.json")
+    out_file = tmp_path / "bench_out.json"
+    summary = run_benchmark(str(database), bench_file, out_file)
+    assert summary["total_queries"] == 40
+    assert summary["sql_execution_success_pct"] == 100.0
+    assert summary["schema_entity_match_pct"] == 100.0
+    assert summary["result_set_exact_match_pct"] == 100.0
 
 
 def test_models_train_on_small_fixture(tmp_path):
@@ -87,6 +125,7 @@ def test_models_train_on_small_fixture(tmp_path):
     metrics = train_models(frame, tmp_path / "artifacts")
     assert "classification_accuracy" in metrics
     assert (tmp_path / "artifacts" / "loan_default_classifier.joblib").exists()
+    assert (tmp_path / "artifacts" / "decision_tree_rules.txt").exists()
     assert "recovery_linear_regression" in metrics
 
 
@@ -123,19 +162,48 @@ def test_threshold_selection_preserves_accuracy_floor_and_maximizes_recall():
     assert validation["recall"] == 1.0
 
 
-def test_api_health_and_query(tmp_path, monkeypatch):
+def test_api_health_query_rules_and_predict(tmp_path, monkeypatch):
+    clear_cache()
     database = tmp_path / "loans.db"
-    load_lending_data(prepared_fixture(tmp_path), database)
+    artifacts = tmp_path / "artifacts"
+    frame = prepared_fixture(tmp_path, rows=60)
+    load_lending_data(frame, database)
+    train_models(frame, artifacts)
+
     monkeypatch.setattr(api_module, "DATABASE", Path(database))
+    monkeypatch.setattr(api_module, "ARTIFACTS", Path(artifacts))
+    api_module._load_models()
+
     client = TestClient(app)
     assert client.get("/health").json()["status"] == "ok"
     assert "Complete JSON response" in client.get("/").text
+    assert client.get("/rules").status_code == 200
+    assert client.get("/metrics").status_code == 200
     response = client.post("/query", json={"question": "hello"})
     assert response.status_code == 200
     assert response.json()["sql"] is None
 
+    pred = client.post(
+        "/predict",
+        json={
+            "annual_inc": 75000,
+            "dti": 14.5,
+            "revol_util": 35.0,
+            "fico_range_low": 700,
+            "loan_amnt": 15000,
+            "int_rate": 11.5,
+            "term": 36,
+            "installment": 495.0,
+            "grade": "B",
+        },
+    )
+    assert pred.status_code == 200
+    body = pred.json()
+    assert 0.0 <= body["default_probability"] <= 1.0
+    assert body["expected_lgd"] is not None
 
-def test_cli_prepare_load_and_train(tmp_path, capsys):
+
+def test_cli_prepare_load_and_train(tmp_path):
     raw = tmp_path / "raw.csv"
     prepared = tmp_path / "prepared.csv"
     database = tmp_path / "loans.db"
@@ -146,4 +214,3 @@ def test_cli_prepare_load_and_train(tmp_path, capsys):
     assert main(["train", str(prepared), str(artifacts)]) == 0
     assert database.exists()
     assert (artifacts / "metrics.json").exists()
-

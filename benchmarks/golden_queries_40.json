@@ -1,0 +1,282 @@
+[
+  {
+    "id": "Q01",
+    "category": "OLAP_Grade_Slicing",
+    "question": "What is the average loan amount by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "grade", "loan_amnt"],
+    "gold_sql": "SELECT l.grade, AVG(l.loan_amnt) AS average_loan_amount FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q02",
+    "category": "OLAP_Grade_Slicing",
+    "question": "What is the average interest rate by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "grade", "int_rate"],
+    "gold_sql": "SELECT l.grade, AVG(l.int_rate) AS average_interest_rate FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q03",
+    "category": "OLAP_Grade_Slicing",
+    "question": "What is the average interest rate by grade and loan status?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "grade", "loan_status", "int_rate"],
+    "gold_sql": "SELECT l.grade, o.loan_status, AVG(l.int_rate) AS average_interest_rate FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE l.grade IS NOT NULL GROUP BY l.grade, o.loan_status ORDER BY l.grade, o.loan_status"
+  },
+  {
+    "id": "Q04",
+    "category": "OLAP_Grade_Slicing",
+    "question": "What is the total loan amount by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "grade", "loan_amnt"],
+    "gold_sql": "SELECT l.grade, ROUND(SUM(l.loan_amnt), 2) AS total_loan_amount FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q05",
+    "category": "OLAP_Grade_Slicing",
+    "question": "How many loans were issued by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "grade"],
+    "gold_sql": "SELECT l.grade, COUNT(*) AS loan_count FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q06",
+    "category": "OLAP_Grade_Slicing",
+    "question": "What is the default rate by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "grade", "default_flag"],
+    "gold_sql": "SELECT l.grade, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q07",
+    "category": "OLAP_Grade_Slicing",
+    "question": "What is the average monthly installment by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "grade", "installment"],
+    "gold_sql": "SELECT l.grade, ROUND(AVG(l.installment), 2) AS average_installment FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q08",
+    "category": "OLAP_Grade_Slicing",
+    "question": "What is the default rate by risk tier?",
+    "expected_entities": ["fact_loan", "dim_loan_grade", "dim_outcome", "risk_tier", "default_flag"],
+    "gold_sql": "SELECT g.risk_tier, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_loan_grade g ON g.grade_key=f.grade_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY g.risk_tier ORDER BY g.risk_tier"
+  },
+  {
+    "id": "Q09",
+    "category": "Temporal_Cohort_Trends",
+    "question": "How many loans were issued by year?",
+    "expected_entities": ["fact_loan", "dim_date", "year"],
+    "gold_sql": "SELECT d.year, COUNT(*) AS loan_count FROM fact_loan f JOIN dim_date d ON d.date_key=f.date_key GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q10",
+    "category": "Temporal_Cohort_Trends",
+    "question": "What is the default rate by year?",
+    "expected_entities": ["fact_loan", "dim_date", "dim_outcome", "year", "default_flag"],
+    "gold_sql": "SELECT d.year, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_date d ON d.date_key=f.date_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q11",
+    "category": "Temporal_Cohort_Trends",
+    "question": "Show the quarterly trend of fully paid and charged-off loans.",
+    "expected_entities": ["fact_loan", "dim_date", "dim_outcome", "year", "quarter", "loan_status"],
+    "gold_sql": "SELECT d.year, d.quarter, o.loan_status, COUNT(*) AS loan_count FROM fact_loan f JOIN dim_date d ON d.date_key=f.date_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY d.year, d.quarter, o.loan_status ORDER BY d.year, d.quarter, o.loan_status"
+  },
+  {
+    "id": "Q12",
+    "category": "Temporal_Cohort_Trends",
+    "question": "What is the average loan amount by year?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_date", "year", "loan_amnt"],
+    "gold_sql": "SELECT d.year, ROUND(AVG(l.loan_amnt), 2) AS average_loan_amount FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_date d ON d.date_key=f.date_key GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q13",
+    "category": "Temporal_Cohort_Trends",
+    "question": "What is the average interest rate by year?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_date", "year", "int_rate"],
+    "gold_sql": "SELECT d.year, ROUND(AVG(l.int_rate), 2) AS average_interest_rate FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_date d ON d.date_key=f.date_key GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q14",
+    "category": "Temporal_Cohort_Trends",
+    "question": "What is the total loan amount by year?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_date", "year", "loan_amnt"],
+    "gold_sql": "SELECT d.year, ROUND(SUM(l.loan_amnt), 2) AS total_loan_amount FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_date d ON d.date_key=f.date_key GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q15",
+    "category": "Temporal_Cohort_Trends",
+    "question": "What is the default rate by year and quarter?",
+    "expected_entities": ["fact_loan", "dim_date", "dim_outcome", "year", "quarter", "default_flag"],
+    "gold_sql": "SELECT d.year, d.quarter, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_date d ON d.date_key=f.date_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY d.year, d.quarter ORDER BY d.year, d.quarter"
+  },
+  {
+    "id": "Q16",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the average interest rate by loan status?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "loan_status", "int_rate"],
+    "gold_sql": "SELECT o.loan_status, AVG(l.int_rate) AS average_interest_rate FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY o.loan_status ORDER BY o.loan_status"
+  },
+  {
+    "id": "Q17",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the average annual income by grade and loan status?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_borrower", "dim_outcome", "grade", "loan_status", "annual_inc"],
+    "gold_sql": "SELECT l.grade, o.loan_status, AVG(b.annual_inc) AS average_annual_income FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE l.grade IS NOT NULL GROUP BY l.grade, o.loan_status ORDER BY l.grade, o.loan_status"
+  },
+  {
+    "id": "Q18",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the average annual income by loan status?",
+    "expected_entities": ["fact_loan", "dim_borrower", "dim_outcome", "loan_status", "annual_inc"],
+    "gold_sql": "SELECT o.loan_status, AVG(b.annual_inc) AS average_annual_income FROM fact_loan f JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY o.loan_status ORDER BY o.loan_status"
+  },
+  {
+    "id": "Q19",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the average DTI by loan status?",
+    "expected_entities": ["fact_loan", "dim_borrower", "dim_outcome", "loan_status", "dti"],
+    "gold_sql": "SELECT o.loan_status, AVG(b.dti) AS average_dti FROM fact_loan f JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY o.loan_status ORDER BY o.loan_status"
+  },
+  {
+    "id": "Q20",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the average FICO score by loan status?",
+    "expected_entities": ["fact_loan", "dim_borrower", "dim_outcome", "loan_status", "fico_range_low"],
+    "gold_sql": "SELECT o.loan_status, AVG(b.fico_range_low) AS average_fico FROM fact_loan f JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY o.loan_status ORDER BY o.loan_status"
+  },
+  {
+    "id": "Q21",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the average revolving utilization by loan status?",
+    "expected_entities": ["fact_loan", "dim_borrower", "dim_outcome", "loan_status", "revol_util"],
+    "gold_sql": "SELECT o.loan_status, ROUND(AVG(b.revol_util), 2) AS average_revol_util FROM fact_loan f JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY o.loan_status ORDER BY o.loan_status"
+  },
+  {
+    "id": "Q22",
+    "category": "Borrower_Risk_Profiling",
+    "question": "Which FICO bands have the highest charge-off rate?",
+    "expected_entities": ["fact_loan", "dim_borrower", "dim_outcome", "fico_range_low", "default_flag"],
+    "gold_sql": "SELECT CASE WHEN b.fico_range_low < 660 THEN 'Sub-660' WHEN b.fico_range_low < 700 THEN '660-699' WHEN b.fico_range_low < 740 THEN '700-739' ELSE '740+' END AS fico_band, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY fico_band ORDER BY default_rate_percent DESC"
+  },
+  {
+    "id": "Q23",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the default rate by DTI band?",
+    "expected_entities": ["fact_loan", "dim_borrower", "dim_outcome", "dti", "default_flag"],
+    "gold_sql": "SELECT CASE WHEN b.dti < 10 THEN 'Low (<10)' WHEN b.dti < 20 THEN 'Moderate (10-19.9)' WHEN b.dti < 30 THEN 'Elevated (20-29.9)' ELSE 'High (30+)' END AS dti_band, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY dti_band ORDER BY dti_band"
+  },
+  {
+    "id": "Q24",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the default rate by income bracket?",
+    "expected_entities": ["fact_loan", "dim_borrower", "dim_outcome", "annual_inc", "default_flag"],
+    "gold_sql": "SELECT CASE WHEN b.annual_inc < 50000 THEN '<50K' WHEN b.annual_inc < 100000 THEN '50K-99K' WHEN b.annual_inc < 150000 THEN '100K-149K' ELSE '150K+' END AS income_band, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_borrower b ON b.borrower_key=f.borrower_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY income_band ORDER BY income_band"
+  },
+  {
+    "id": "Q25",
+    "category": "Borrower_Risk_Profiling",
+    "question": "What is the average FICO score by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_borrower", "grade", "fico_range_low"],
+    "gold_sql": "SELECT l.grade, ROUND(AVG(b.fico_range_low), 2) AS average_fico FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_borrower b ON b.borrower_key=f.borrower_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q26",
+    "category": "Recovery_and_LGD",
+    "question": "What is the total principal received by loan status?",
+    "expected_entities": ["fact_loan", "dim_outcome", "loan_status", "total_rec_prncp"],
+    "gold_sql": "SELECT o.loan_status, SUM(f.total_rec_prncp) AS total_principal_received FROM fact_loan f JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY o.loan_status ORDER BY o.loan_status"
+  },
+  {
+    "id": "Q27",
+    "category": "Recovery_and_LGD",
+    "question": "What is the total principal received by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "grade", "total_rec_prncp"],
+    "gold_sql": "SELECT l.grade, SUM(f.total_rec_prncp) AS total_principal_received FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q28",
+    "category": "Recovery_and_LGD",
+    "question": "What is the total principal received by year?",
+    "expected_entities": ["fact_loan", "dim_date", "year", "total_rec_prncp"],
+    "gold_sql": "SELECT d.year, SUM(f.total_rec_prncp) AS total_principal_received FROM fact_loan f JOIN dim_date d ON d.date_key=f.date_key GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q29",
+    "category": "Recovery_and_LGD",
+    "question": "What principal was recovered by grade and issue year?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_date", "grade", "year", "total_rec_prncp"],
+    "gold_sql": "SELECT l.grade, d.year, ROUND(SUM(f.total_rec_prncp), 2) AS total_principal_received FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_date d ON d.date_key=f.date_key WHERE l.grade IS NOT NULL GROUP BY l.grade, d.year ORDER BY l.grade, d.year"
+  },
+  {
+    "id": "Q30",
+    "category": "Recovery_and_LGD",
+    "question": "What is the recovery rate on charged off loans by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "grade", "total_rec_prncp", "loan_amnt"],
+    "gold_sql": "SELECT l.grade, ROUND(100.0 * SUM(f.total_rec_prncp) / NULLIF(SUM(l.loan_amnt), 0), 2) AS recovery_rate_percent FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE o.loan_status = 'Charged Off' AND l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q31",
+    "category": "Recovery_and_LGD",
+    "question": "What is the loss given default (LGD) on charged off loans by year?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_date", "dim_outcome", "year", "total_rec_prncp", "loan_amnt"],
+    "gold_sql": "SELECT d.year, ROUND(100.0 * (1.0 - SUM(f.total_rec_prncp) / NULLIF(SUM(l.loan_amnt), 0)), 2) AS lgd_percent FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_date d ON d.date_key=f.date_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE o.loan_status = 'Charged Off' GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q32",
+    "category": "Recovery_and_LGD",
+    "question": "What is the average principal recovered on charged off loans by year?",
+    "expected_entities": ["fact_loan", "dim_date", "dim_outcome", "year", "total_rec_prncp"],
+    "gold_sql": "SELECT d.year, ROUND(AVG(f.total_rec_prncp), 2) AS average_principal_received FROM fact_loan f JOIN dim_date d ON d.date_key=f.date_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE o.loan_status = 'Charged Off' GROUP BY d.year ORDER BY d.year"
+  },
+  {
+    "id": "Q33",
+    "category": "Recovery_and_LGD",
+    "question": "What is the unrecovered principal exposure on charged off loans by grade?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "grade", "loan_amnt", "total_rec_prncp"],
+    "gold_sql": "SELECT l.grade, ROUND(SUM(l.loan_amnt - f.total_rec_prncp), 2) AS unrecovered_principal FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE o.loan_status = 'Charged Off' AND l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q34",
+    "category": "Filtered_Slice_and_Dice",
+    "question": "What is the total loan amount charged off by loan grade in 2017?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_date", "dim_outcome", "grade", "year", "loan_amnt"],
+    "gold_sql": "SELECT l.grade, ROUND(SUM(l.loan_amnt), 2) AS total_loan_amount FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_date d ON d.date_key=f.date_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE d.year = 2017 AND o.loan_status = 'Charged Off' AND l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q35",
+    "category": "Filtered_Slice_and_Dice",
+    "question": "What is the default rate by loan term?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "term_months", "default_flag"],
+    "gold_sql": "SELECT l.term_months, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key GROUP BY l.term_months ORDER BY l.term_months"
+  },
+  {
+    "id": "Q36",
+    "category": "Filtered_Slice_and_Dice",
+    "question": "What is the default rate by grade for 60-month loans?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "grade", "term_months", "default_flag"],
+    "gold_sql": "SELECT l.grade, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE l.term_months = 60 AND l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q37",
+    "category": "Filtered_Slice_and_Dice",
+    "question": "What is the average interest rate by grade in 2018?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_date", "grade", "year", "int_rate"],
+    "gold_sql": "SELECT l.grade, ROUND(AVG(l.int_rate), 2) AS average_interest_rate FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_date d ON d.date_key=f.date_key WHERE d.year = 2018 AND l.grade IS NOT NULL GROUP BY l.grade ORDER BY l.grade"
+  },
+  {
+    "id": "Q38",
+    "category": "Filtered_Slice_and_Dice",
+    "question": "How many loans were issued in 2016 by quarter?",
+    "expected_entities": ["fact_loan", "dim_date", "year", "quarter"],
+    "gold_sql": "SELECT d.year, d.quarter, COUNT(*) AS loan_count FROM fact_loan f JOIN dim_date d ON d.date_key=f.date_key WHERE d.year = 2016 GROUP BY d.year, d.quarter ORDER BY d.year, d.quarter"
+  },
+  {
+    "id": "Q39",
+    "category": "TopN_and_Risk_Ranking",
+    "question": "Which top 3 grades have the highest default rate?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "grade", "default_flag"],
+    "gold_sql": "SELECT l.grade, ROUND(100.0 * AVG(o.default_flag), 2) AS default_rate_percent FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE l.grade IS NOT NULL GROUP BY l.grade ORDER BY default_rate_percent DESC LIMIT 3"
+  },
+  {
+    "id": "Q40",
+    "category": "TopN_and_Risk_Ranking",
+    "question": "Which top 3 grades have the highest unrecovered principal exposure on charged off loans?",
+    "expected_entities": ["fact_loan", "dim_loan", "dim_outcome", "grade", "loan_amnt", "total_rec_prncp"],
+    "gold_sql": "SELECT l.grade, ROUND(SUM(l.loan_amnt - f.total_rec_prncp), 2) AS unrecovered_principal FROM fact_loan f JOIN dim_loan l ON l.loan_key=f.loan_key JOIN dim_outcome o ON o.outcome_key=f.outcome_key WHERE o.loan_status = 'Charged Off' AND l.grade IS NOT NULL GROUP BY l.grade ORDER BY unrecovered_principal DESC LIMIT 3"
+  }
+]

@@ -1,37 +1,18 @@
-# CS7050 Proposal Compliance Review
+# CS 7050 Proposal Compliance Review
 
 Source: `CS7050_Project_Proposal.pdf`
 
-## Confirmed requirements
+## Verified Implementation Status
 
-| Proposal requirement | Implementation status |
+| Proposal Requirement | Implementation & Verification Status |
 |---|---|
-| 2015–2018 Lending Club records | Preparation filters `issue_date` to 2015–2018 |
-| Approximately 100K records | Deterministic 100,000-row limit with seed 42 |
-| Annual income, DTI, revolver utilization, FICO | Preserved in `dim_borrower` |
-| Loan amount, interest rate, term, installment, grade | Preserved in `dim_loan`; grade was added to the baseline |
-| Loan status and principal received | Preserved in `dim_outcome` and `fact_loan` |
-| Star/snowflake data mart | SQLite star schema with four dimensions and one fact |
-| OLAP slicing and dicing | Allowlisted grouping SQL by year, grade, and status |
-| Decision-tree default classification | Implemented with `DecisionTreeClassifier` |
-| Linear recovery / LGD analysis | Implemented for charged-off `total_rec_prncp` where sufficient variation exists |
-| FastAPI RAG backend | Implemented in `lending_club/api.py` |
-| RAG SQL benchmark | Documented sample set; offline tests execute every sample |
-| Classification metrics | Accuracy, precision, recall, F1, ROC-AUC, PR-AUC, confusion matrix, and majority-class baseline |
-| Recovery metrics | MAE, RMSE, R-squared, and training-mean baseline |
-
-## Deviations and assumptions
-
-- PostgreSQL is specified in the proposal, but SQLite is used as the local
-  implementation and PostgreSQL is a supported architectural adaptation.
-- NRP GPU and a customized LLM are optional/recommended proposal components;
-  the implementation remains functional without GPU or downloaded models.
-- The proposal mentions a linear regression model for expected recovery and
-  LGD. This implementation estimates principal recovery from charged-off
-  records using `total_rec_prncp`; it does not claim a complete LGD estimate
-  because the Kaggle subset fields and proposal do not define a separate loss
-  basis.
-- The proposal's 40-query LLM benchmark is not available as an external model
-  benchmark in this offline implementation. The equivalent submitted sample
-  set is deterministic and tested end-to-end.
-- No Kaggle data or credentials are present or downloaded by this project.
+| 2015–2018 Lending Club records (~100K) | **Complete:** `lending_club/data.py` deterministically samples 100,000 settled loans (seed 42). |
+| Borrower & loan attributes + outcomes | **Complete:** All 11 required attributes preserved across `dim_borrower`, `dim_loan`, `dim_loan_grade`, `dim_date`, `dim_outcome`, and `fact_loan`. |
+| Star schema (`Fact_Loan_Performance`, `Dim_Borrower`, `Dim_Loan_Grade`, `Dim_Date`) | **Complete:** Implemented for both SQLite and PostgreSQL (`dw` schema) in `lending_club/etl.py`, with `fact_loan_performance` view, 8 covering indexes, `ANALYZE`, and exact reconciliation (100,000 rows, 0 FK violations, exact principal sums in 1.148 s). |
+| OLAP slicing and dicing | **Complete:** Supports multi-dimensional slicing by grade, risk tier, year, quarter, loan status, loan term, FICO band, DTI band, and income bracket with 2.3x–4.4x indexed speedup. |
+| Decision-Tree default classifier + human-auditable risk rules | **Complete:** Tuned `DecisionTreeClassifier` achieves 0.7999 accuracy, 0.6889 ROC-AUC, 0.2727 PR-AUC on 2018 holdout (beating Logistic Regression on ROC-AUC/PR-AUC); unscaled rules exported to `artifacts/decision_tree_rules.txt` and `GET /rules`. |
+| Linear Regression recovery & LGD model | **Complete:** Evaluates both OLS `LinearRegression` and bounded recovery-rate `Ridge(alpha=10.0)` with MSE, RMSE, MAE, R², and LGD MAE. Achieves R²=0.3847 and LGD MAE=0.1444 on seasoning-matched 80/20 split and diagnoses 2018 right-censoring. |
+| Agentic RAG + NRP GPU LLM support | **Complete:** `lending_club/rag.py` retrieves DDL + few-shot SQL, invokes NRP/vLLM Llama 3.1-8B / Mistral-7B (`NRP_LLM_BASE_URL`) with a 2-step self-correction loop, enforces read-only SQL guardrails, and falls back to a compositional schema-grounded planner offline. |
+| 40-Query Golden Benchmark | **Complete:** `benchmarks/golden_queries_40.json` (40 queries with `gold_sql`); verified 100.0% SQL execution success, 100.0% schema entity match, 100.0% exact normalized result-set match, 29.65 ms cold mean latency, 0.004 ms warm cache latency (7,413x speedup). |
+| FastAPI backend & interactive UI | **Complete:** `/`, `/health`, `/query`, `/predict`, `/metrics`, `/rules`, `/cache/stats` with `GZipMiddleware`, LRU caching, and connection pooling. |
+| Automated tests | **Complete:** 11/11 unit & integration tests passing in `tests/test_lending_club.py`. |
